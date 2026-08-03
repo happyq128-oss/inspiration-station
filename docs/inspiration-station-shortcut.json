@@ -1,0 +1,36 @@
+{
+  "WFWorkflowActions": [
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.getvariable",
+      "WFWorkflowActionParameters": {
+        "WFVariableName": "API_URL",
+        "WFTextActionText": "https://你的域名.netlify.app/api/add"
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.detect.link",
+      "WFWorkflowActionParameters": {
+        "WFWorkflowActionInput": "WFShortcutInput"
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.gettext",
+      "WFWorkflowActionParameters": {
+        "WFTextActionText": "已保存到灵感站 ✨ AI 后台整理中"
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.notification",
+      "WFWorkflowActionParameters": {
+        "WFNotificationActionTitle": "灵感站",
+        "WFNotificationActionBody": "已保存到灵感站 ✨\nAI 后台整理中（10-30秒）"
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.url",
+      "WFWorkflowActionParameters": {
+        "WFURLActionURL": "https://你的域名.netlify.app"
+      }
+    }
+  ]
+}

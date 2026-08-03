@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>灵感库 · 灵感站</title>
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+  <div class="app" id="app"></div>
+  <script src="/js/api.js"></script>
+  <script>
+    const urlParams = new URLSearchParams(location.search);
+    const focusId = urlParams.get('id');
+    const initialStatus = urlParams.get('status') || '';
+    const initialCategory = urlParams.get('subCategory') || '';
+
+    let state = {
+      categories: [],
+      venueTypes: [],
+      inspirations: [],
+      filter: {
+        status: initialStatus,
+        subCategory: initialCategory,
+        venueType: '',
+        platform: '',
+        keyword: '',
+      },
+      view: 'grid', // 'grid' | 'list'
+      selected: new Set(),
+    };
+
+    document.getElementById('app').innerHTML = `
+      ${renderSidebar('list')}
+      <main class="main">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">灵感库</h1>
+            <div class="page-subtitle" id="result-count">加载中...</div>
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-cyan" onclick="exportExcel()">📊 导出 Excel</button>
+            <button class="btn btn-yellow" onclick="openAddModal()">+ 手动添加</button>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <input class="search-box" placeholder="🔍 搜索标题、描述、备注..." id="search-box" />
+          <div id="filter-status" style="display: flex; gap: 6px;"></div>
+          <div class="view-toggle">
+            <button data-view="grid" class="active" onclick="switchView('grid')">▦ 卡片</button>
+            <button data-view="list" onclick="switchView('list')">≡ 列表</button>
+          </div>
+        </div>
+
+        <div class="toolbar" id="filter-row-2" style="margin-top: -8px;">
+          <div id="filter-platform" style="display: flex; gap: 6px;"></div>
+          <div id="filter-category" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+          <div id="filter-venue" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+          <div id="batch-bar" style="display: none; margin-left: auto; gap: 8px; align-items: center;">
+            <span class="text-soft" id="selected-count">0 项已选</span>
+            <button class="btn btn-sm btn-ghost" onclick="batchAction('organized')">标记已整理</button>
+            <button class="btn btn-sm btn-ghost" onclick="batchAction('used')">标记已用</button>
+            <button class="btn btn-sm btn-ghost" onclick="openBatchCategory()">改小类</button>
+            <button class="btn btn-sm" style="background: #ffebee; color: #c62828;" onclick="batchDelete()">删除</button>
+          </div>
+        </div>
+
+        <div class="inspirations-grid" id="grid-view"></div>
+        <div class="inspirations-list" id="list-view">
+          <div class="insp-row" style="font-weight: 700; background: transparent; border: none; color: var(--color-text-soft); font-size: 12px; cursor: default;">
+            <div></div><div>标题</div><div>小类</div><div>状态</div><div>平台</div><div>时间</div>
+          </div>
+          <div id="list-rows"></div>
+        </div>
+      </main>
+    `;
+
+    // 状态筛选
+    const statuses = [
+      { value: '', label: '全部' },
+      { value: 'pending', label: '待整理' },
+      { value: 'organized', label: '已整理' },
+      { value: 'used', label: '已用' },
+    ];
+    document.getElementById('filter-status').innerHTML = statuses.map(s =>
+      `<button class="filter-pill ${state.filter.status === s.value ? 'active' : ''}" data-status="${s.value}">${s.label}</button>`
+    ).join('');
+
+    // 平台筛选
+    const platforms = [
+      { value: '', label: '全平台' },
+      { value: 'xiaohongshu', label: '小红书' },
+      { value: 'douyin', label: '抖音' },
+      { value: 'huaban', label: '花瓣' },
+      { value: 'other', label: '其他' },
+    ];
+    document.getElementById('filter-platform').innerHTML = platforms.map(p =>
+      `<button class="filter-pill ${state.filter.platform === p.value ? 'active' : ''}" data-platform="${p.value}">${p.label}</button>`
+    ).join('');
+
+    // 事件
+    document.getElementById('search-box').addEventListener('input', e => {
+      state.filter.keyword = e.target.value;
+      loadList();
+    });
+    document.getElementById('filter-status').addEventListener('click', e => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      state.filter.status = btn.dataset.status;
+      document.querySelectorAll('#filter-status .filter-pill').forEach(b => b.classList.toggle('active', b === btn));
+      loadList();
+    });
+    document.getElementById('filter-platform').addEventListener('click', e => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      state.filter.platform = btn.dataset.platform;
+      document.querySelectorAll('#filter-platform .filter-pill').forEach(b => b.classList.toggle('active', b === btn));
+      loadList();
+    });
+
+    // 加载分类 + 列表
+    Promise.all([API.getCategories(), API.listInspirations({})])
+      .then(([catRes, listRes]) => {
+        if (catRes.success) {
+          state.categories = catRes.categories;
+          state.venueTypes = catRes.venueTypes || [];
+          renderCategoryFilter();
+          renderVenueTypeFilter();
+        }
+        if (listRes.success) {
+          state.inspirations = listRes.inspirations;
+          renderList();
+        }
+      })
+      .catch(e => {
+        if (e.message && e.message.includes('401')) {
+          const t = prompt('请输入 API Token：');
+          if (t) { API.setToken(t); location.reload(); }
+        } else {
+          showToast('加载失败：' + e.message);
+        }
+      });
+
+    function renderCategoryFilter() {
+      const el = document.getElementById('filter-category');
+      el.innerHTML = state.categories.map(c =>
+        `<button class="filter-pill ${state.filter.subCategory === c.id ? 'active' : ''}" data-cat="${c.id}" style="--c: ${c.color}; ${state.filter.subCategory === c.id ? `background:${c.color};color:#fff;border-color:${c.color};` : ''}">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.color};margin-right:6px;"></span>${c.name}
+        </button>`
+      ).join('');
+      // 移除旧 listener 用 event delegation 一次性绑
+      el.onclick = e => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        state.filter.subCategory = state.filter.subCategory === btn.dataset.cat ? '' : btn.dataset.cat;
+        renderCategoryFilter();
+        loadList();
+      };
+    }
+
+    function renderVenueTypeFilter() {
+      const el = document.getElementById('filter-venue');
+      if (!el) return;
+      el.innerHTML = state.venueTypes.map(v =>
+        `<button class="filter-pill ${state.filter.venueType === v.id ? 'active' : ''}" data-venue="${v.id}" style="${state.filter.venueType === v.id ? `background:${v.color};color:#fff;border-color:${v.color};` : ''}">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.color};margin-right:6px;"></span>${v.name}
+        </button>`
+      ).join('');
+      el.onclick = e => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        state.filter.venueType = state.filter.venueType === btn.dataset.venue ? '' : btn.dataset.venue;
+        renderVenueTypeFilter();
+        loadList();
+      };
+    }
+
+    function loadList() {
+      API.listInspirations({
+        status: state.filter.status,
+        subCategory: state.filter.subCategory,
+        venueType: state.filter.venueType,
+        platform: state.filter.platform,
+        keyword: state.filter.keyword,
+      }).then(res => {
+        if (res.success) {
+          state.inspirations = res.inspirations;
+          renderList();
+        }
+      });
+    }
+
+    function renderList() {
+      const total = state.inspirations.length;
+      document.getElementById('result-count').textContent = total > 0 ? `共 ${total} 条灵感` : '还没有匹配的灵感';
+
+      const gridEl = document.getElementById('grid-view');
+      const listEl = document.getElementById('list-rows');
+
+      if (total === 0) {
+        gridEl.innerHTML = `
+          <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--color-text-soft);">
+            <div style="font-size: 56px; margin-bottom: 12px;">🔍</div>
+            <div style="font-size: 16px; font-weight: 600;">没有匹配的灵感</div>
+            <div style="font-size: 13px; margin-top: 6px;">试试调整筛选条件，或者去 iPhone 分享几条进来 ✨</div>
+          </div>
+        `;
+        listEl.innerHTML = '';
+        return;
+      }
+
+      gridEl.innerHTML = state.inspirations.map(insp => renderInspirationCard(insp)).join('');
+      listEl.innerHTML = state.inspirations.map(insp => renderInspirationRow(insp)).join('');
+
+      // 焦点高亮
+      if (focusId) {
+        setTimeout(() => {
+          const el = document.querySelector(`[data-id="${focusId}"]`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.style.outline = '3px solid var(--color-pink)';
+            el.style.outlineOffset = '2px';
+            setTimeout(() => { el.style.outline = ''; el.style.outlineOffset = ''; }, 2500);
+          }
+        }, 100);
+      }
+    }
+
+    function renderInspirationCard(insp) {
+      const cat = insp.subCategory || insp.aiSuggestion?.subCategory;
+      const catName = insp.subCategoryName || insp.aiSuggestion?.subCategoryName || '待分类';
+      const catColor = getCategoryColor(state.categories, cat);
+      const venue = insp.venueType || insp.aiSuggestion?.venueType;
+      const venueName = insp.venueTypeName || insp.aiSuggestion?.venueTypeName;
+      const venueColor = getCategoryColor(state.venueTypes, venue);
+      const conf = insp.aiSuggestion?.confidence;
+      const confTag = conf !== undefined
+        ? (conf >= 70
+            ? `<span class="tag tag-confidence-high">AI ${conf}%</span>`
+            : conf >= 40
+              ? `<span class="tag" style="background: #FFF8E1; color: #F57C00;">AI ${conf}%</span>`
+              : `<span class="tag tag-confidence-low">⚠ AI ${conf}%</span>`)
+        : `<span class="tag tag-default">待 AI</span>`;
+
+      const cover = insp.coverImage
+        ? `<img class="insp-cover" src="${escapeHtml(insp.coverImage)}" alt="" loading="lazy" onerror="this.outerHTML='<div class=&quot;insp-cover-placeholder&quot;>图片加载失败</div>'">`
+        : `<div class="insp-cover-placeholder">⏳ 抓取中</div>`;
+
+      const checked = state.selected.has(insp.id) ? 'checked' : '';
+      const checkedStyle = state.selected.has(insp.id) ? 'outline: 3px solid var(--color-pink);' : '';
+
+      return `
+        <div class="insp-card" data-id="${insp.id}" style="${checkedStyle}; position: relative;" onclick="openInspiration('${insp.id}')">
+          <input type="checkbox" ${checked} onclick="event.stopPropagation(); toggleSelect('${insp.id}', this.checked)" style="position: absolute; top: 10px; left: 10px; width: 20px; height: 20px; z-index: 10; cursor: pointer; accent-color: var(--color-pink);">
+          ${cover}
+          <div class="insp-body">
+            <div class="insp-title">${escapeHtml(insp.title || '无标题')}</div>
+            <div class="insp-meta">
+              <span class="tag" style="background: ${catColor}22; color: ${catColor};">${escapeHtml(catName)}</span>
+              ${venueName ? `<span class="tag" style="background: ${venueColor}22; color: ${venueColor};">${escapeHtml(venueName)}</span>` : ''}
+              <span class="tag tag-status-${insp.status}">${STATUS_LABEL[insp.status]}</span>
+              ${confTag}
+            </div>
+            <div class="insp-meta" style="margin-top: 8px;">
+              <span class="tag tag-default">${PLATFORM_LABEL[insp.platform]}</span>
+              <span class="text-mute" style="font-size: 11px;">${formatDate(insp.createdAt)}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderInspirationRow(insp) {
+      const cat = insp.subCategory || insp.aiSuggestion?.subCategory;
+      const catName = insp.subCategoryName || insp.aiSuggestion?.subCategoryName || '待分类';
+      const catColor = getCategoryColor(state.categories, cat);
+      const venue = insp.venueType || insp.aiSuggestion?.venueType;
+      const venueName = insp.venueTypeName || insp.aiSuggestion?.venueTypeName;
+      const venueColor = getCategoryColor(state.venueTypes, venue);
+      const checked = state.selected.has(insp.id) ? 'checked' : '';
+
+      const cover = insp.coverImage
+        ? `<img class="insp-row-cover" src="${escapeHtml(insp.coverImage)}" loading="lazy">`
+        : `<div class="insp-row-cover" style="display:flex;align-items:center;justify-content:center;color:#999;font-size:11px;">无</div>`;
+
+      return `
+        <div class="insp-row" data-id="${insp.id}" onclick="openInspiration('${insp.id}')">
+          <div style="position: relative;">
+            <input type="checkbox" ${checked} onclick="event.stopPropagation(); toggleSelect('${insp.id}', this.checked)" style="position: absolute; top: -8px; left: -8px; z-index: 10; accent-color: var(--color-pink);">
+            ${cover}
+          </div>
+          <div>
+            <div class="text-bold" style="font-size: 14px;">${escapeHtml(insp.title || '无标题')}</div>
+            ${insp.userNote ? `<div class="text-soft" style="font-size: 12px; margin-top: 2px;">📝 ${escapeHtml(insp.userNote.slice(0, 50))}</div>` : ''}
+          </div>
+          <div>
+            <span class="tag" style="background: ${catColor}22; color: ${catColor};">${escapeHtml(catName)}</span>
+            ${venueName ? `<span class="tag" style="background: ${venueColor}22; color: ${venueColor}; margin-left:4px;">${escapeHtml(venueName)}</span>` : ''}
+          </div>
+          <div><span class="tag tag-status-${insp.status}">${STATUS_LABEL[insp.status]}</span></div>
+          <div class="text-soft" style="font-size: 13px;">${PLATFORM_LABEL[insp.platform]}</div>
+          <div class="text-soft" style="font-size: 12px;">${formatDate(insp.createdAt)}</div>
+        </div>
+      `;
+    }
+
+    function switchView(v) {
+      state.view = v;
+      document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
+      document.getElementById('grid-view').classList.toggle('hidden', v !== 'grid');
+      document.getElementById('list-view').classList.toggle('active', v === 'list');
+    }
+
+    function toggleSelect(id, checked) {
+      if (checked) state.selected.add(id);
+      else state.selected.delete(id);
+      updateBatchBar();
+      // 重新渲染选中样式
+      document.querySelectorAll(`[data-id="${id}"]`).forEach(el => {
+        el.style.outline = checked ? '3px solid var(--color-pink)' : '';
+        el.style.outlineOffset = checked ? '2px' : '';
+      });
+    }
+
+    function updateBatchBar() {
+      const bar = document.getElementById('batch-bar');
+      const cnt = state.selected.size;
+      bar.style.display = cnt > 0 ? 'flex' : 'none';
+      document.getElementById('selected-count').textContent = `${cnt} 项已选`;
+    }
+
+    async function batchAction(status) {
+      if (!confirm(`将 ${state.selected.size} 条灵感标记为「${STATUS_LABEL[status]}」？`)) return;
+      const promises = [...state.selected].map(id => API.updateInspiration(id, { status }));
+      await Promise.all(promises);
+      showToast('已更新');
+      state.selected.clear();
+      updateBatchBar();
+      loadList();
+    }
+
+    async function batchDelete() {
+      if (!confirm(`确定删除 ${state.selected.size} 条灵感？此操作不可恢复。`)) return;
+      await API.deleteInspirations([...state.selected]);
+      showToast('已删除');
+      state.selected.clear();
+      updateBatchBar();
+      loadList();
+    }
+
+    function openBatchCategory() {
+      const html = `
+        <div class="modal-mask show" id="batch-cat-modal">
+          <div class="modal" style="max-width: 400px;">
+            <div class="modal-header">
+              <div class="modal-title">批量改小类</div>
+              <button class="modal-close" onclick="document.getElementById('batch-cat-modal').remove()">✕</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label class="form-label">选择新小类</label>
+                <select class="form-select" id="batch-cat-select">
+                  <option value="">未分类</option>
+                  ${state.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-ghost" onclick="document.getElementById('batch-cat-modal').remove()">取消</button>
+              <button class="btn btn-primary" onclick="confirmBatchCategory()">确定</button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.insertAdjacentHTML('beforeend', html);
+    }
+
+    async function confirmBatchCategory() {
+      const catId = document.getElementById('batch-cat-select').value;
+      const promises = [...state.selected].map(id => API.updateInspiration(id, { subCategory: catId || undefined, status: 'organized' }));
+      await Promise.all(promises);
+      showToast('已更新');
+      document.getElementById('batch-cat-modal').remove();
+      state.selected.clear();
+      updateBatchBar();
+      loadList();
+    }
+
+    function exportExcel() {
+      const params = {};
+      if (state.filter.status) params.status = state.filter.status;
+      if (state.filter.subCategory) params.subCategory = state.filter.subCategory;
+      API.exportExcel(params);
+    }
+
+    function openInspiration(id) {
+      location.href = '/confirm?id=' + id;
+    }
+
+    let _addModalImageBase64 = null;
+
+    function openAddModal() {
+      _addModalImageBase64 = null;
+      const html = `
+        <div class="modal-mask show">
+          <div class="modal" style="max-width: 560px;">
+            <div class="modal-header">
+              <div class="modal-title">手动添加灵感</div>
+              <button class="modal-close" onclick="this.closest('.modal-mask').remove()">✕</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label class="form-label">链接 URL <span style="color:red">*</span></label>
+                <input class="form-input" id="add-url" placeholder="https://www.xiaohongshu.com/explore/...">
+              </div>
+              <div class="form-group">
+                <label class="form-label">标题（可选）</label>
+                <input class="form-input" id="add-title" placeholder="自动抓取或留空">
+              </div>
+              <div class="form-group">
+                <label class="form-label">
+                  截图（推荐，AI 看图分类更准）
+                  <span class="text-mute" style="font-weight: normal;">— 可拖拽到框里，或点选文件</span>
+                </label>
+                <div id="add-drop-zone" style="border: 2px dashed var(--color-border); border-radius: var(--radius); padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s; background: #fafafa;" onclick="document.getElementById('add-file').click()">
+                  <div id="add-preview-wrap">
+                    <div style="font-size: 32px; margin-bottom: 6px;">📸</div>
+                    <div class="text-soft" style="font-size: 13px;">点击选择截图，或拖拽图片到这里</div>
+                    <div class="text-mute" style="font-size: 11px; margin-top: 4px;">支持 PNG / JPG / 截图（最大 5MB）</div>
+                  </div>
+                  <input type="file" id="add-file" accept="image/*" style="display: none;" onchange="handleAddImage(event)">
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-ghost" onclick="this.closest('.modal-mask').remove()">取消</button>
+              <button class="btn btn-primary" onclick="submitAdd()">保存</button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.insertAdjacentHTML('beforeend', html);
+
+      // 拖拽支持
+      const dz = document.getElementById('add-drop-zone');
+      dz.addEventListener('dragover', e => {
+        e.preventDefault();
+        dz.style.borderColor = 'var(--color-pink)';
+        dz.style.background = 'var(--color-pink-soft)';
+      });
+      dz.addEventListener('dragleave', e => {
+        e.preventDefault();
+        dz.style.borderColor = 'var(--color-border)';
+        dz.style.background = '#fafafa';
+      });
+      dz.addEventListener('drop', e => {
+        e.preventDefault();
+        dz.style.borderColor = 'var(--color-border)';
+        dz.style.background = '#fafafa';
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+          handleAddImageFile(file);
+        }
+      });
+    }
+
+    function handleAddImage(event) {
+      const file = event.target.files[0];
+      if (file) handleAddImageFile(file);
+    }
+
+    function handleAddImageFile(file) {
+      if (file.size > 5 * 1024 * 1024) {
+        showToast('图片太大（超过 5MB），请压缩后再试');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = e => {
+        _addModalImageBase64 = e.target.result.split(',')[1]; // 去掉 data:image/...;base64, 前缀
+        // 显示预览
+        const wrap = document.getElementById('add-preview-wrap');
+        wrap.innerHTML = `
+          <img src="${e.target.result}" style="max-width: 100%; max-height: 200px; border-radius: 8px; margin-bottom: 8px;">
+          <div class="text-soft" style="font-size: 12px;">✓ 截图已就绪，点保存上传</div>
+        `;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function submitAdd() {
+      const url = document.getElementById('add-url').value.trim();
+      const title = document.getElementById('add-title').value.trim();
+      if (!url) { showToast('请输入链接'); return; }
+      try {
+        new URL(url);
+      } catch {
+        showToast('链接格式不对'); return;
+      }
+      try {
+        const body = { url, title, source: 'manual' };
+        if (_addModalImageBase64) body.imageBase64 = _addModalImageBase64;
+
+        const res = await API.addInspiration(body);
+        if (res.success) {
+          showToast(res.dedup ? '该链接已存在' : (_addModalImageBase64 ? '已保存截图，AI 后台看图中' : '已保存，AI 后台整理中'));
+          document.querySelector('.modal-mask').remove();
+          loadList();
+        } else {
+          showToast('保存失败：' + (res.error || '未知错误'));
+        }
+      } catch (e) {
+        showToast('保存失败：' + e.message, 4000);
+      }
+    }
+  </script>
+</body>
+</html>

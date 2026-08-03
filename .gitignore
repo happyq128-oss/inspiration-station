@@ -1,0 +1,24 @@
+# 依赖
+node_modules/
+
+# 环境变量（绝对不能 push 到 GitHub）
+.env
+.env.local
+.env.development
+.env.production
+
+# Netlify 本地状态
+.netlify/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+npm-debug.log*
+
+# 编辑器
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>设置 · 灵感站</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .rules-list {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--color-text-soft);
+      max-height: 100px;
+      overflow-y: auto;
+    }
+    .rule-item {
+      padding: 2px 0;
+      border-bottom: 1px dashed #e0e0e0;
+    }
+    .rule-item:last-child { border: none; }
+  </style>
+</head>
+<body>
+  <div class="app" id="app"></div>
+  <script src="/js/api.js"></script>
+  <script>
+    let categories = [];
+    let venueTypes = [];
+
+    document.getElementById('app').innerHTML = `
+      ${renderSidebar('settings')}
+      <main class="main" style="max-width: 880px;">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">设置</h1>
+            <div class="page-subtitle">管理分类库、Token、备份</div>
+          </div>
+        </div>
+
+        <div class="card-flat mb-6">
+          <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">🎨 形式小类（6 个）</h2>
+          <p class="text-soft" style="font-size: 13px; margin-bottom: 16px;">
+            AI 会从这里选小类。<b>描述</b>会注入 prompt 作为规则——写得越具体，AI 越贴你。
+            <br>系统会在你修正分类时，<b>自动累积规则</b>到对应小类（最多 20 条）。
+          </p>
+          <div id="cat-list"></div>
+          <button class="btn btn-cyan mt-4" onclick="addCategory()">+ 添加小类</button>
+          <button class="btn btn-primary mt-4" onclick="saveAll()" style="margin-left: 8px;">💾 保存所有修改</button>
+        </div>
+
+        <div class="card-flat mb-6">
+          <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">🏛️ 展馆类型（3 个）</h2>
+          <p class="text-soft" style="font-size: 13px; margin-bottom: 16px;">AI 会从这里选展馆类型。同样支持自定义描述作为 AI 规则。</p>
+          <div id="venue-list"></div>
+          <button class="btn btn-cyan mt-4" onclick="addVenue()">+ 添加展馆类型</button>
+        </div>
+
+        <div class="card-flat mb-6">
+          <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">🔑 API Token</h2>
+          <p class="text-soft" style="font-size: 13px; margin-bottom: 16px;">在 Netlify 环境变量 API_TOKEN 设置后，本地填这个让网页能调用。</p>
+          <input class="form-input" id="token-input" placeholder="当前 Token（已设会自动显示）">
+          <button class="btn btn-primary mt-4" onclick="saveToken()">保存 Token</button>
+        </div>
+
+        <div class="card-flat mb-6">
+          <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">💾 数据备份</h2>
+          <p class="text-soft" style="font-size: 13px; margin-bottom: 16px;">
+            数据存在 Netlify Blobs 中。强烈建议每周手动下载一次备份。
+            <br>系统也会在每周日凌晨 3 点（Netlify scheduled function）记录备份时间。
+          </p>
+          <button class="btn btn-yellow" onclick="exportBackup()">📦 下载完整备份（JSON）</button>
+          <button class="btn btn-ghost mt-4" onclick="markBackedUp()" style="margin-left: 8px;">✓ 我已经手动备份</button>
+          <div class="mt-4 text-soft" style="font-size: 12px;" id="last-backup-info"></div>
+        </div>
+
+        <div class="card-flat">
+          <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">📱 iPhone 快捷指令</h2>
+          <p class="text-soft" style="font-size: 13px; margin-bottom: 16px;">
+            在 iPhone「快捷指令」App 中导入配置后，分享到小红书/抖音/花瓣时选「保存到灵感站」即可。
+          </p>
+          <div class="card-flat" style="background: #fafafa;">
+            <div class="text-bold" style="font-size: 13px; margin-bottom: 6px;">📍 你的 API 地址：</div>
+            <code style="background: #fff; padding: 6px 10px; border-radius: 6px; font-size: 12px; display: inline-block;" id="api-url">${location.origin}/api/add</code>
+            <div class="text-soft mt-2" style="font-size: 12px;">快捷指令的 Webhook URL 填这个地址</div>
+          </div>
+          <a href="https://www.icloud.com/shortcuts/" target="_blank" class="btn btn-ghost mt-4">📲 打开 iCloud 快捷指令中心</a>
+        </div>
+      </main>
+    `;
+
+    loadAll();
+    loadStats();
+
+    async function loadAll() {
+      const res = await API.getCategories();
+      if (res.success) {
+        categories = res.categories;
+        venueTypes = res.venueTypes || [];
+        renderCategories();
+        renderVenues();
+      }
+    }
+
+    async function loadStats() {
+      const res = await API.getStats();
+      if (res.success) {
+        const last = res.stats.lastBackupAt;
+        const el = document.getElementById('last-backup-info');
+        if (last) {
+          el.textContent = `上次标记备份：${formatDate(last)}`;
+        } else {
+          el.textContent = '尚未标记过备份';
+        }
+      }
+    }
+
+    // ============ 形式小类 ============
+    function renderCategories() {
+      const el = document.getElementById('cat-list');
+      el.innerHTML = categories.map((c, i) => {
+        const rulesHtml = (c.rules && c.rules.length > 0) ? `
+          <div class="rules-list">
+            <div class="text-bold" style="margin-bottom: 4px; color: var(--color-pink);">📌 自动累积的规则（${c.rules.length}）</div>
+            ${c.rules.map(r => `<div class="rule-item">• ${escapeHtml(r)}</div>`).join('')}
+          </div>
+        ` : '';
+        return `
+        <div style="border-bottom: 1px solid var(--color-border); padding: 12px 0;">
+          <div style="display: grid; grid-template-columns: 30px 1fr 1fr 100px 50px; gap: 10px; align-items: center;">
+            <span style="display:inline-block;width:20px;height:20px;border-radius:6px;background:${c.color};"></span>
+            <input class="form-input" data-type="cat" data-idx="${i}" data-field="name" value="${escapeHtml(c.name)}" placeholder="名称">
+            <input class="form-input" data-type="cat" data-idx="${i}" data-field="description" value="${escapeHtml(c.description || '')}" placeholder="描述（AI 规则）">
+            <input class="form-input" type="color" data-type="cat" data-idx="${i}" data-field="color" value="${c.color}">
+            <button class="btn btn-sm" style="background: #ffebee; color: #c62828;" onclick="removeCategory(${i})">✕</button>
+          </div>
+          ${rulesHtml}
+        </div>
+      `;}).join('');
+    }
+
+    function addCategory() {
+      const id = 'cat_' + Date.now().toString(36);
+      categories.push({ id, name: '新小类', color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'), description: '', rules: [] });
+      renderCategories();
+    }
+
+    function removeCategory(i) {
+      if (!confirm(`删除小类「${categories[i].name}」？已有灵感归类不变。`)) return;
+      categories.splice(i, 1);
+      renderCategories();
+    }
+
+    // ============ 展馆类型 ============
+    function renderVenues() {
+      const el = document.getElementById('venue-list');
+      el.innerHTML = venueTypes.map((v, i) => `
+        <div style="display: grid; grid-template-columns: 30px 1fr 1fr 100px 50px; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--color-border);">
+          <span style="display:inline-block;width:20px;height:20px;border-radius:6px;background:${v.color};"></span>
+          <input class="form-input" data-type="venue" data-idx="${i}" data-field="name" value="${escapeHtml(v.name)}" placeholder="名称">
+          <input class="form-input" data-type="venue" data-idx="${i}" data-field="description" value="${escapeHtml(v.description || '')}" placeholder="描述（AI 规则）">
+          <input class="form-input" type="color" data-type="venue" data-idx="${i}" data-field="color" value="${v.color}">
+          <button class="btn btn-sm" style="background: #ffebee; color: #c62828;" onclick="removeVenue(${i})">✕</button>
+        </div>
+      `).join('');
+    }
+
+    function addVenue() {
+      const id = 'venue_' + Date.now().toString(36);
+      venueTypes.push({ id, name: '新展馆类型', color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0'), description: '' });
+      renderVenues();
+    }
+
+    function removeVenue(i) {
+      if (!confirm(`删除展馆类型「${venueTypes[i].name}」？已有灵感归类不变。`)) return;
+      venueTypes.splice(i, 1);
+      renderVenues();
+    }
+
+    // ============ 通用事件 ============
+    document.getElementById('app').addEventListener('input', e => {
+      const t = e.target;
+      const type = t.dataset.type;
+      const idx = t.dataset.idx;
+      const field = t.dataset.field;
+      if (!type || idx === undefined) return;
+      const list = type === 'cat' ? categories : venueTypes;
+      list[idx][field] = e.target.value;
+    });
+
+    async function saveAll() {
+      const res = await API.saveCategories(categories, venueTypes);
+      if (res.success) {
+        showToast('✓ 分类库已保存');
+        loadAll();
+      } else {
+        showToast('保存失败：' + (res.error || ''));
+      }
+    }
+
+    function saveToken() {
+      const t = document.getElementById('token-input').value.trim();
+      API.setToken(t);
+      showToast('✓ Token 已保存到本地');
+    }
+
+    // 加载当前 token
+    document.getElementById('token-input').value = API.getToken() ? '••••••••' : '';
+
+    function exportBackup() {
+      API.exportBackup();
+      setTimeout(() => markBackedUp(), 1000);
+    }
+
+    async function markBackedUp() {
+      await API.markBackedUp();
+      showToast('✓ 已标记备份时间');
+      loadStats();
+    }
+  </script>
+</body>
+</html>

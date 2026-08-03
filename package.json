@@ -1,0 +1,27 @@
+{
+  "name": "inspiration-station",
+  "version": "1.0.0",
+  "description": "展陈形式灵感收集工作台 - 移动端快捷指令抓取 + AI 预归类 + 网页端整理 + Excel 导出",
+  "private": true,
+  "scripts": {
+    "build": "echo '静态站点，无需构建'",
+    "dev": "netlify dev",
+    "deploy": "netlify deploy --prod"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^6.5.0",
+    "@netlify/functions": "^2.7.0",
+    "exceljs": "^4.4.0",
+    "node-fetch": "^3.3.2",
+    "playwright-core": "^1.45.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "esbuild": "^0.23.0",
+    "netlify-cli": "^17.0.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,97 @@
+[build]
+  command = "npm run build"
+  publish = "src"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# API 路径映射（具体每个都写，避免 splat 拼错）
+[[redirects]]
+  from = "/api/add"
+  to = "/.netlify/functions/add-inspiration"
+  status = 200
+
+[[redirects]]
+  from = "/api/list"
+  to = "/.netlify/functions/list-inspirations"
+  status = 200
+
+[[redirects]]
+  from = "/api/update"
+  to = "/.netlify/functions/update-inspiration"
+  status = 200
+
+[[redirects]]
+  from = "/api/delete"
+  to = "/.netlify/functions/delete-inspiration"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai-classify"
+  to = "/.netlify/functions/ai-classify"
+  status = 200
+
+[[redirects]]
+  from = "/api/scrape"
+  to = "/.netlify/functions/scrape-page"
+  status = 200
+
+[[redirects]]
+  from = "/api/stats"
+  to = "/.netlify/functions/get-stats"
+  status = 200
+
+[[redirects]]
+  from = "/api/categories"
+  to = "/.netlify/functions/manage-categories"
+  status = 200
+
+[[redirects]]
+  from = "/api/export"
+  to = "/.netlify/functions/export-excel"
+  status = 200
+
+[[redirects]]
+  from = "/api/backup"
+  to = "/.netlify/functions/backup-data"
+  status = 200
+
+[[redirects]]
+  from = "/api/health"
+  to = "/.netlify/functions/health-check"
+  status = 200
+
+# 图片代理：/api/image/{id}
+[[redirects]]
+  from = "/api/image/*"
+  to = "/.netlify/functions/get-image?id=:splat"
+  status = 200
+
+# 页面路由
+[[redirects]]
+  from = "/"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/inspirations"
+  to = "/pages/inspirations.html"
+  status = 200
+
+[[redirects]]
+  from = "/confirm"
+  to = "/pages/confirm.html"
+  status = 200
+
+[[redirects]]
+  from = "/settings"
+  to = "/pages/settings.html"
+  status = 200
+
+# 定时任务：每周日凌晨 3 点自动备份
+[functions."scheduled-backup"]
+  schedule = "0 3 * * 0"

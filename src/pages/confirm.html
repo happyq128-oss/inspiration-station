@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>确认灵感 · 灵感站</title>
+  <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+  <div class="app" id="app"></div>
+  <script src="/js/api.js"></script>
+  <script>
+    const urlParams = new URLSearchParams(location.search);
+    const id = urlParams.get('id');
+
+    let insp = null;
+    let categories = [];
+    let venueTypes = [];
+
+    if (!id) {
+      document.getElementById('app').innerHTML = `
+        ${renderSidebar('list')}
+        <main class="main">
+          <div style="text-align: center; padding: 80px 20px;">
+            <div style="font-size: 48px;">😶</div>
+            <div class="mt-4 text-soft">没有指定灵感 ID</div>
+            <a href="/inspirations" class="btn btn-primary mt-4">返回灵感库</a>
+          </div>
+        </main>
+      `;
+    } else {
+      loadInspiration();
+    }
+
+    async function loadInspiration() {
+      const res = await API.listInspirations({});
+      if (res.success) {
+        insp = res.inspirations.find(i => i.id === id);
+        const catRes = await API.getCategories();
+        if (catRes.success) {
+          categories = catRes.categories;
+          venueTypes = catRes.venueTypes || [];
+        }
+        if (!insp) {
+          document.getElementById('app').innerHTML = `
+            ${renderSidebar('list')}
+            <main class="main">
+              <div style="text-align: center; padding: 80px 20px;">
+                <div style="font-size: 48px;">🔍</div>
+                <div class="mt-4 text-soft">找不到这条灵感</div>
+                <a href="/inspirations" class="btn btn-primary mt-4">返回灵感库</a>
+              </div>
+            </main>
+          `;
+          return;
+        }
+        render();
+      }
+    }
+
+    function render() {
+      const ai = insp.aiSuggestion;
+      const cat = insp.subCategory || ai?.subCategory;
+      const catColor = getCategoryColor(categories, cat);
+      const catName = insp.subCategoryName || ai?.subCategoryName || '未分类';
+      const venue = insp.venueType || ai?.venueType;
+      const venueColor = getCategoryColor(venueTypes, venue);
+      const venueName = insp.venueTypeName || ai?.venueTypeName;
+
+      document.getElementById('app').innerHTML = `
+        ${renderSidebar('list')}
+        <main class="main" style="max-width: 900px;">
+          <div class="page-header">
+            <a href="/inspirations" class="text-soft" style="font-size: 14px;">← 返回灵感库</a>
+          </div>
+
+          <div class="card-flat">
+            ${insp.coverImage
+              ? `<img src="${escapeHtml(insp.coverImage)}" style="width: 100%; max-height: 400px; object-fit: cover; border-radius: 12px; margin-bottom: 20px;" onerror="this.style.display='none'">`
+              : `<div style="width: 100%; height: 200px; background: #f5f5f5; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #999; margin-bottom: 20px;">封面图加载中或暂无</div>`}
+
+            <h1 style="font-size: 22px; font-weight: 800; line-height: 1.4; letter-spacing: -0.3px;">${escapeHtml(insp.title || '无标题')}</h1>
+
+            <div class="insp-meta mt-4">
+              <span class="tag" style="background: ${catColor}22; color: ${catColor};">${escapeHtml(catName)}</span>
+              ${venueName ? `<span class="tag" style="background: ${venueColor}22; color: ${venueColor};">${escapeHtml(venueName)}</span>` : ''}
+              <span class="tag tag-status-${insp.status}">${STATUS_LABEL[insp.status]}</span>
+              <span class="tag tag-default">${PLATFORM_LABEL[insp.platform]}</span>
+              <span class="text-mute" style="font-size: 12px;">${formatDate(insp.createdAt)}</span>
+            </div>
+
+            ${insp.description ? `<p class="mt-4 text-soft" style="font-size: 14px; line-height: 1.7;">${escapeHtml(insp.description)}</p>` : ''}
+
+            <div class="mt-4">
+              <a href="${escapeHtml(insp.url)}" target="_blank" class="btn btn-cyan btn-sm">🔗 打开原帖</a>
+              <button class="btn btn-ghost btn-sm" onclick="rescrape()">🔄 重新抓取</button>
+              <button class="btn btn-ghost btn-sm" onclick="reclassify()">🤖 重新 AI 分类</button>
+            </div>
+          </div>
+
+          ${ai ? `
+            <div class="ai-suggestion mt-6">
+              <div class="ai-suggestion-header">
+                <div class="ai-label">🤖 AI 预归类</div>
+                <span class="text-bold" style="color: var(--color-pink); font-size: 16px;">${ai.confidence}%</span>
+              </div>
+              <div style="font-size: 14px; line-height: 1.6;">
+                AI 建议归类为 <strong style="color: ${catColor};">${escapeHtml(ai.subCategoryName)}</strong>
+                ${ai.venueTypeName ? ` · <strong style="color: ${venueColor};">${escapeHtml(ai.venueTypeName)}</strong>` : ''}
+                ${ai.reasoning ? `<div class="mt-2 text-soft" style="font-size: 13px;">💡 ${escapeHtml(ai.reasoning)}</div>` : ''}
+              </div>
+              <div class="confidence-bar"><div style="width: ${ai.confidence}%; background: ${ai.confidence >= 70 ? 'var(--color-cyan)' : ai.confidence >= 40 ? '#FFA726' : '#FF6B6B'};"></div></div>
+              ${ai.confidence < 60 ? `<div class="mt-2 text-soft" style="font-size: 12px;">⚠️ AI 把握不大，建议你确认或修正</div>` : ''}
+            </div>
+          ` : `
+            <div class="card-flat mt-6" style="background: #FFF8E1; border-color: #FFD93D;">
+              <div class="text-bold">⏳ AI 还在整理中...</div>
+              <div class="text-soft mt-2" style="font-size: 13px;">通常 10-30 秒完成。可以先手动选择小类。</div>
+            </div>
+          `}
+
+          <div class="card-flat mt-6">
+            <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px;">确认 / 修正分类</h2>
+
+            <div class="form-group">
+              <label class="form-label">形式小类</label>
+              <div id="cat-options" style="display: flex; gap: 10px; flex-wrap: wrap;"></div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">展馆类型</label>
+              <div id="venue-options" style="display: flex; gap: 10px; flex-wrap: wrap;"></div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">形式小类</label>
+              <div id="cat-options" style="display: flex; gap: 10px; flex-wrap: wrap;"></div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">补充标签（用空格分隔，比如：抗战 装置艺术 沉浸式）</label>
+              <input class="form-input" id="tags-input" value="${(insp.tags || []).join(' ')}" placeholder="可留空">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">状态</label>
+              <div style="display: flex; gap: 8px;">
+                <button class="filter-pill status-btn ${insp.status === 'pending' ? 'active' : ''}" data-status="pending">待整理</button>
+                <button class="filter-pill status-btn ${insp.status === 'organized' ? 'active' : ''}" data-status="organized">已整理</button>
+                <button class="filter-pill status-btn ${insp.status === 'used' ? 'active' : ''}" data-status="used">已用</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">备注</label>
+              <textarea class="form-textarea" id="note-input" placeholder="写下你的想法、参考角度、适用场景等...">${escapeHtml(insp.userNote || '')}</textarea>
+            </div>
+
+            <div class="flex gap-2 mt-6">
+              <button class="btn btn-primary btn-lg" onclick="saveAll()">✓ 保存</button>
+              <button class="btn btn-ghost" onclick="location.href='/inspirations'">取消</button>
+              <button class="btn" style="background: #ffebee; color: #c62828; margin-left: auto;" onclick="deleteInspiration()">🗑 删除</button>
+            </div>
+          </div>
+        </main>
+      `;
+
+      // 渲染小类选项
+      const catOptEl = document.getElementById('cat-options');
+      catOptEl.innerHTML = `
+        <button class="filter-pill cat-option ${!insp.subCategory ? 'active' : ''}" data-cat="" style="${!insp.subCategory ? 'background:#666;color:#fff;border-color:#666;' : ''}">未分类</button>
+      ` + categories.map(c => {
+        const active = insp.subCategory === c.id;
+        return `<button class="filter-pill cat-option ${active ? 'active' : ''}" data-cat="${c.id}" style="${active ? `background:${c.color};color:#fff;border-color:${c.color};` : ''}">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.color};margin-right:6px;"></span>${c.name}
+        </button>`;
+      }).join('');
+
+      // 渲染展馆类型选项
+      const venueOptEl = document.getElementById('venue-options');
+      venueOptEl.innerHTML = `
+        <button class="filter-pill venue-option ${!insp.venueType ? 'active' : ''}" data-venue="" style="${!insp.venueType ? 'background:#666;color:#fff;border-color:#666;' : ''}">未指定</button>
+      ` + venueTypes.map(v => {
+        const active = insp.venueType === v.id;
+        return `<button class="filter-pill venue-option ${active ? 'active' : ''}" data-venue="${v.id}" style="${active ? `background:${v.color};color:#fff;border-color:${v.color};` : ''}">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.color};margin-right:6px;"></span>${v.name}
+        </button>`;
+      }).join('');
+
+      catOptEl.addEventListener('click', e => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        document.querySelectorAll('.cat-option').forEach(b => {
+          b.classList.remove('active');
+          b.style.background = '';
+          b.style.color = '';
+          b.style.borderColor = '';
+        });
+        btn.classList.add('active');
+        const catId = btn.dataset.cat;
+        if (!catId) {
+          btn.style.background = '#666';
+          btn.style.color = '#fff';
+          btn.style.borderColor = '#666';
+        } else {
+          const cat = categories.find(c => c.id === catId);
+          btn.style.background = cat.color;
+          btn.style.color = '#fff';
+          btn.style.borderColor = cat.color;
+        }
+      });
+
+      // 展馆类型点击
+      venueOptEl.addEventListener('click', e => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        document.querySelectorAll('.venue-option').forEach(b => {
+          b.classList.remove('active');
+          b.style.background = '';
+          b.style.color = '';
+          b.style.borderColor = '';
+        });
+        btn.classList.add('active');
+        const venueId = btn.dataset.venue;
+        if (!venueId) {
+          btn.style.background = '#666';
+          btn.style.color = '#fff';
+          btn.style.borderColor = '#666';
+        } else {
+          const venue = venueTypes.find(v => v.id === venueId);
+          btn.style.background = venue.color;
+          btn.style.color = '#fff';
+          btn.style.borderColor = venue.color;
+        }
+      });
+
+      document.querySelectorAll('.status-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.status-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+        });
+      });
+    }
+
+    async function saveAll() {
+      const subCategory = document.querySelector('.cat-option.active')?.dataset.cat || '';
+      const venueType = document.querySelector('.venue-option.active')?.dataset.venue || '';
+      const status = document.querySelector('.status-btn.active')?.dataset.status || 'pending';
+      const tags = document.getElementById('tags-input').value.trim().split(/\s+/).filter(Boolean);
+      const userNote = document.getElementById('note-input').value.trim();
+
+      // 检测是否修改了 AI 建议（用于触发学习）
+      const learnFromCorrection = !!insp.aiSuggestion &&
+        (subCategory !== (insp.aiSuggestion.subCategory || '') ||
+         venueType !== (insp.aiSuggestion.venueType || ''));
+
+      const res = await API.updateInspiration(id, {
+        subCategory: subCategory || undefined,
+        venueType: venueType || undefined,
+        status,
+        tags,
+        userNote,
+      }, learnFromCorrection);
+      if (res.success) {
+        showToast('✓ 已保存');
+        setTimeout(() => location.href = '/inspirations', 800);
+      } else {
+        showToast('保存失败：' + (res.error || ''));
+      }
+    }
+
+    async function deleteInspiration() {
+      if (!confirm('确定删除这条灵感？此操作不可恢复。')) return;
+      await API.deleteInspirations([id]);
+      showToast('已删除');
+      setTimeout(() => location.href = '/inspirations', 500);
+    }
+
+    async function rescrape() {
+      showToast('重新抓取中...');
+      const res = await API.rescrape(id);
+      if (res.success) {
+        insp = res.inspiration;
+        render();
+        showToast('已重新抓取');
+      } else {
+        showToast('抓取失败：' + (res.error || ''));
+      }
+    }
+
+    async function reclassify() {
+      showToast('AI 重新分类中...');
+      const res = await API.reclassify(id);
+      if (res.success) {
+        insp = res.inspiration;
+        render();
+        showToast('AI 重新分类完成');
+      } else {
+        showToast('失败：' + (res.error || ''));
+      }
+    }
+  </script>
+</body>
+</html>
