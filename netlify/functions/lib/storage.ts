@@ -9,11 +9,19 @@ const KEY = 'data-v1';
 const IMAGE_STORE_NAME = 'inspiration-images';
 
 function getStoreOptions(name: string) {
-  // 优先用显式传入的 siteID + token（兼容 Netlify Drop 等特殊部署）
-  // 注意：SITE_ID 是 Netlify 保留字，不能用，所以用 MY_SITE_ID
+  // 关键：在 Netlify Functions 部署时，会自动注入 SITE_ID（Netlify 保留字）
+  // 此时必须用自动注入的 siteID + 内部 token（不能用 .env 里的，否则 401）
+  // 本地 dev 时 SITE_ID 不存在，用 .env 里的 MY_SITE_ID + NETLIFY_BLOBS_TOKEN
+  const isNetlifyDeploy = !!process.env.SITE_ID || !!process.env.NETLIFY;
+
+  if (isNetlifyDeploy) {
+    // Netlify 部署：让 Netlify 自己注入 context
+    return getStore(name);
+  }
+
+  // 本地 dev：用 .env 里的显式凭证
   const siteID = process.env.MY_SITE_ID;
   const token = process.env.NETLIFY_BLOBS_TOKEN;
-
   if (siteID && token) {
     return getStore({
       name,
@@ -21,7 +29,7 @@ function getStoreOptions(name: string) {
       token,
     } as any);
   }
-  // 默认模式：Netlify 部署时自动注入上下文
+  // 兜底：默认模式
   return getStore(name);
 }
 
