@@ -85,8 +85,10 @@ export const DEFAULT_VENUE_TYPES: VenueType[] = [
 ];
 
 export interface AIClassification {
-  subCategory: string;
-  subCategoryName: string;
+  // 形式小类（多选）
+  subCategories: string[];
+  subCategoryNames: string[];
+  // 展馆类型
   venueType: string;
   venueTypeName: string;
   confidence: number;
@@ -100,9 +102,9 @@ export interface Inspiration {
   platform: Platform;
   coverImage?: string;
   description?: string;
-  // 形式小类
-  subCategory?: string;
-  subCategoryName?: string;
+  // 形式小类（多选）
+  subCategories?: string[];
+  subCategoryNames?: string[];
   // 展馆类型
   venueType?: string;
   venueTypeName?: string;

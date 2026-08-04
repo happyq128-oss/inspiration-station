@@ -8,14 +8,15 @@ import { Handler } from '@netlify/functions';
 import { updateInspiration, loadData, saveData } from './lib/storage';
 import { Inspiration, SubCategory } from './lib/types';
 import { jsonResponse, errorResponse, requireAuth } from './lib/utils';
+import { withContext } from './lib/handler';
 
 const ALLOWED_FIELDS = [
-  'title', 'subCategory', 'subCategoryName',
+  'title', 'subCategories', 'subCategoryNames',
   'venueType', 'venueTypeName',
   'status', 'userNote', 'tags', 'description',
 ];
 
-const handler: Handler = async (event) => {
+const _innerHandler: Handler = async (event, _ctx) => {
   if (event.httpMethod === 'OPTIONS') return jsonResponse({ ok: true });
   if (event.httpMethod !== 'POST' && event.httpMethod !== 'PUT') {
     return errorResponse('Method not allowed', 405);
@@ -38,10 +39,26 @@ const handler: Handler = async (event) => {
       if (key in patch) safePatch[key] = patch[key];
     }
 
-    // 如果设置了 subCategory，补全 name
-    if (safePatch.subCategory && !safePatch.subCategoryName) {
-      const cat = data.categories.find(c => c.id === safePatch.subCategory);
-      if (cat) safePatch.subCategoryName = cat.name;
+    // 如果设置了 subCategories（数组），补全 subCategoryNames
+    if (Array.isArray(safePatch.subCategories) && (!Array.isArray(safePatch.subCategoryNames) || safePatch.subCategoryNames.length !== safePatch.subCategories.length)) {
+      safePatch.subCategoryNames = safePatch.subCategories
+        .map((id: string) => data.categories.find(c => c.id === id)?.name)
+        .filter(Boolean);
+      // 过滤非法 id
+      safePatch.subCategories = safePatch.subCategories.filter((id: string) =>
+        data.categories.some(c => c.id === id)
+      );
+    }
+    // 兼容老 API（单个 subCategory 字符串）
+    if (typeof safePatch.subCategory === 'string' && !safePatch.subCategories) {
+      const id = safePatch.subCategory;
+      const cat = data.categories.find(c => c.id === id);
+      if (cat) {
+        safePatch.subCategories = [id];
+        safePatch.subCategoryNames = [cat.name];
+      }
+      delete safePatch.subCategory;
+      delete safePatch.subCategoryName;
     }
     // 如果设置了 venueType，补全 name
     if (safePatch.venueType && !safePatch.venueTypeName) {
@@ -56,19 +73,19 @@ const handler: Handler = async (event) => {
 
     // 【自动学习】用户修正了 AI 建议时，累积规则到小类
     if (learnFromCorrection) {
-      const oldSub = existing.aiSuggestion?.subCategory;
-      const newSub = safePatch.subCategory || existing.subCategory;
+      const oldSub = existing.aiSuggestion?.subCategories || [];
+      const newSub = safePatch.subCategories || existing.subCategories || [];
 
-      if (oldSub && newSub && oldSub !== newSub) {
-        const oldCat = data.categories.find(c => c.id === oldSub);
-        const newCat = data.categories.find(c => c.id === newSub);
+      // 取新增的 subCategory（不在 AI 建议里的）
+      const addedSubs = newSub.filter(s => !oldSub.includes(s));
 
-        if (oldCat && newCat) {
-          // 生成规则："X类的东西应归Y类"
-          // 但更智能：基于标题提取特征
-          const rule = generateRule(existing, oldCat, newCat);
+      if (addedSubs.length > 0) {
+        for (const addedId of addedSubs) {
+          const newCat = data.categories.find(c => c.id === addedId);
+          if (!newCat) continue;
+          // 生成规则
+          const rule = generateRule(existing, newCat);
           if (rule) {
-            // 追加到新小类的 rules（限制最多 20 条）
             const catIdx = data.categories.findIndex(c => c.id === newCat.id);
             if (catIdx >= 0) {
               const updatedCat: SubCategory = {
@@ -76,11 +93,11 @@ const handler: Handler = async (event) => {
                 rules: [...(data.categories[catIdx].rules || []), rule].slice(-20),
               };
               data.categories[catIdx] = updatedCat;
-              await saveData(data);
-              console.log(`[learn] Added rule to ${newCat.name}: ${rule}`);
             }
           }
         }
+        await saveData(data);
+        console.log(`[learn] Updated ${addedSubs.length} rules`);
       }
     }
 
@@ -98,27 +115,14 @@ const handler: Handler = async (event) => {
  * 比如：AI 说"装置"，用户改"新材料"
  * 生成："含金属编织的展品 → 新材料"
  */
-function generateRule(insp: Inspiration, oldCat: SubCategory, newCat: SubCategory): string | null {
-  const signals: string[] = [];
-
-  // 从标题提取关键词（去掉通用词）
-  const titleWords = (insp.title || '').replace(/[，。、！？：；,.!?;:]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
-  // 找特征词（2-6 个字的短语）
-  const keywords = titleWords.filter(w => w.length >= 2 && w.length <= 8);
-  if (keywords.length > 0) {
-    signals.push(`含"${keywords.slice(0, 2).join('"或"')}"的`);
-  }
-
+function generateRule(insp: Inspiration, newCat: SubCategory): string | null {
   // 简化规则：直接用标题
-  if (insp.title && insp.title.length < 30) {
+  if (insp.title && insp.title.length < 30 && insp.title !== '无标题' && insp.title !== '加载中...' && insp.title !== '待整理') {
     return `类似"${insp.title}"的素材 → ${newCat.name}`;
-  }
-
-  if (signals.length > 0) {
-    return `${signals.join('')}素材 → ${newCat.name}`;
   }
 
   return `参考"${(insp.title || '未命名').slice(0, 20)}"的特征 → ${newCat.name}`;
 }
 
+const handler = withContext((event, context) => _innerHandler(event, context));
 export { handler };

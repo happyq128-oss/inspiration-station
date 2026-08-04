@@ -5,8 +5,9 @@ import { Handler } from '@netlify/functions';
 import { loadData, saveData } from './lib/storage';
 import { SubCategory, VenueType, DEFAULT_CATEGORIES, DEFAULT_VENUE_TYPES } from './lib/types';
 import { jsonResponse, errorResponse, requireAuth } from './lib/utils';
+import { withContext } from './lib/handler';
 
-const handler: Handler = async (event) => {
+const _innerHandler: Handler = async (event, _ctx) => {
   if (event.httpMethod === 'OPTIONS') return jsonResponse({ ok: true });
   if (!(await requireAuth(event))) return errorResponse('Unauthorized', 401);
 
@@ -55,4 +56,5 @@ const handler: Handler = async (event) => {
   return errorResponse('Method not allowed', 405);
 };
 
+const handler = withContext((event, context) => _innerHandler(event, context));
 export { handler };

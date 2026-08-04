@@ -4,6 +4,7 @@
 
 import { Handler } from '@netlify/functions';
 import { loadData, saveData } from './lib/storage';
+import { withContext } from './lib/handler';
 
 const handler: Handler = async () => {
   try {

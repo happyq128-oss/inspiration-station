@@ -3,6 +3,7 @@
 
 import { Handler } from '@netlify/functions';
 import { jsonResponse } from './lib/utils';
+import { withContext } from './lib/handler';
 
 const handler: Handler = async () => {
   return jsonResponse({

@@ -2,24 +2,53 @@
 // Netlify Blobs 数据层封装
 
 import { getStore } from '@netlify/blobs';
+import type { Context } from '@netlify/functions';
 import { DataStore, DEFAULT_DATA, Inspiration } from './types';
 
 const STORE_NAME = 'inspiration-store';
 const KEY = 'data-v1';
 const IMAGE_STORE_NAME = 'inspiration-images';
 
-function getStoreOptions(name: string) {
-  // 关键：在 Netlify Functions 部署时，会自动注入 SITE_ID（Netlify 保留字）
-  // 此时必须用自动注入的 siteID + 内部 token（不能用 .env 里的，否则 401）
-  // 本地 dev 时 SITE_ID 不存在，用 .env 里的 MY_SITE_ID + NETLIFY_BLOBS_TOKEN
-  const isNetlifyDeploy = !!process.env.SITE_ID || !!process.env.NETLIFY;
+// 关键：Netlify Functions 推荐做法是把 handler 收到的 context 传给 getStore
+// 不能用 env.NETLIFY_BLOBS_TOKEN（nfp_ 格式是 UI 用的，跑 Functions 时 401）
+let _netlifyContext: Context | undefined;
 
-  if (isNetlifyDeploy) {
-    // Netlify 部署：让 Netlify 自己注入 context
+/** 在 handler 入口调用一次，把 context 注入 storage */
+export function setNetlifyContext(ctx: Context | undefined) {
+  _netlifyContext = ctx;
+}
+
+function getStoreOptions(name: string) {
+  // 1) 优先：用 Netlify Functions 自动注入的 NETLIFY_BLOBS_CONTEXT（base64 JSON）
+  //    必须能真正解码（netlify dev 会把不存在的 env 注入成字符串 "undefined"）
+  const envContext = process.env.NETLIFY_BLOBS_CONTEXT;
+  if (envContext && envContext !== 'undefined' && envContext.length > 100) {
+    try {
+      const ctx = JSON.parse(
+        Buffer.from(envContext, 'base64').toString('utf8'),
+      );
+      if (ctx.siteID && ctx.token) {
+        return getStore({
+          name,
+          siteID: ctx.siteID,
+          token: ctx.token,
+          edgeURL: ctx.edgeURL,
+          uncachedEdgeURL: ctx.uncachedEdgeURL,
+        } as any);
+      }
+    } catch {
+      // 解码失败不算错，继续尝试其他 source
+    }
+  }
+
+  // 2) Netlify Functions 自动注入的 globalThis context
+  if ((globalThis as any).netlifyBlobsContext) {
     return getStore(name);
   }
 
-  // 本地 dev：用 .env 里的显式凭证
+  // 3) 本地 dev / 显式配置：.env 里的 token
+  //    注意：nfp_ 格式的 token 仅用于 Netlify UI，运行时可能 401
+  //    本地 dev 是 OK 的（netlify dev 内部用真实凭证代理）
   const siteID = process.env.MY_SITE_ID;
   const token = process.env.NETLIFY_BLOBS_TOKEN;
   if (siteID && token) {
@@ -29,7 +58,8 @@ function getStoreOptions(name: string) {
       token,
     } as any);
   }
-  // 兜底：默认模式
+
+  // 4) 兜底
   return getStore(name);
 }
 
@@ -147,14 +177,36 @@ export async function listInspirations(filter?: {
   status?: string;
   platform?: string;
   keyword?: string;
+  startDate?: string;
+  endDate?: string;
 }): Promise<Inspiration[]> {
   const data = await loadData();
   let list = Object.values(data.inspirations);
 
-  if (filter?.subCategory) list = list.filter(i => i.subCategory === filter.subCategory);
+  if (filter?.subCategory) {
+    const target = filter.subCategory;
+    list = list.filter(i => {
+      // 优先用新 API：subCategories 数组（多选）
+      if (Array.isArray(i.subCategories) && i.subCategories.length > 0) {
+        return i.subCategories.includes(target);
+      }
+      // 兼容老 API：subCategory 单数字符串
+      return i.subCategory === target;
+    });
+  }
   if (filter?.venueType) list = list.filter(i => i.venueType === filter.venueType);
   if (filter?.status) list = list.filter(i => i.status === filter.status);
   if (filter?.platform) list = list.filter(i => i.platform === filter.platform);
+  if (filter?.startDate || filter?.endDate) {
+    const start = filter?.startDate || '';
+    const end = filter?.endDate || '';
+    list = list.filter(i => {
+      const d = (i.createdAt || '').slice(0, 10);
+      if (start && d < start) return false;
+      if (end && d > end) return false;
+      return true;
+    });
+  }
   if (filter?.keyword) {
     const k = filter.keyword.toLowerCase();
     list = list.filter(i =>

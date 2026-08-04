@@ -9,6 +9,7 @@
 <body>
   <div class="app" id="app"></div>
   <script src="/js/api.js"></script>
+  <script src="/js/add-modal.js"></script>
   <script>
     let state = {
       stats: null,
@@ -25,7 +26,10 @@
           <div class="hero-label">展陈形式灵感库</div>
           <div class="hero-title" id="hero-title">还没有灵感 ✨</div>
           <div class="hero-subtitle" id="hero-subtitle">用 iPhone 分享到「灵感站」快捷指令，开始收集你的第一个灵感</div>
-          <a href="/inspirations" class="hero-action">查看全部 →</a>
+          <button class="hero-add-btn" onclick="openAddModal()" aria-label="添加新灵感">
+            <span class="hero-add-icon">+</span>
+            <span class="hero-add-text">添加新灵感</span>
+          </button>
         </div>
 
         <div class="stats-grid" id="stats-grid">
@@ -79,6 +83,31 @@
         </div>
       </main>
     `;
+
+    // 添加新灵感后：刷新首页数据（统计 + 最近灵感 + hero 文案）
+    window.onInspirationAdded = async () => {
+      try {
+        const [statsRes, listRes, catRes] = await Promise.all([
+          API.getStats(), API.listInspirations({}), API.getCategories()
+        ]);
+        if (statsRes.success) {
+          state.stats = statsRes.stats;
+          state.categories = statsRes.categories || state.categories;
+          state.venueTypes = statsRes.venueTypes || state.venueTypes;
+          renderStats();
+        }
+        if (listRes.success) {
+          state.recent = listRes.inspirations.slice(0, 8);
+          renderRecent();
+        }
+        if (catRes.success && !state.categories.length) {
+          state.categories = catRes.categories;
+          state.venueTypes = catRes.venueTypes || [];
+        }
+      } catch (e) {
+        console.warn('Refresh after add failed:', e);
+      }
+    };
 
     // 加载数据
     Promise.all([API.getStats(), API.listInspirations({}), API.getCategories()])
@@ -236,7 +265,7 @@
         <a class="insp-card" href="/inspirations?id=${insp.id}">
           ${cover}
           <div class="insp-body">
-            <div class="insp-title">${escapeHtml(insp.title || '无标题')}</div>
+            <div class="insp-title" data-title="${escapeHtml(insp.title || '无标题')}" onclick="startEditTitle('${insp.id}', this, event, onHomeTitleSaved)" title="点击修改标题">${escapeHtml(insp.title || '无标题')}</div>
             <div class="insp-meta">
               <span class="tag" style="background: ${catColor}22; color: ${catColor};">${escapeHtml(catName)}</span>
               ${venueName ? `<span class="tag" style="background: ${venueColor}22; color: ${venueColor};">${escapeHtml(venueName)}</span>` : ''}
@@ -246,6 +275,11 @@
           </div>
         </a>
       `;
+    }
+
+    function onHomeTitleSaved(id, newTitle) {
+      const insp = state.recent.find(i => i.id === id);
+      if (insp) insp.title = newTitle;
     }
   </script>
 </body>

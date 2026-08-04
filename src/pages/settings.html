@@ -48,7 +48,8 @@
           </p>
           <div id="cat-list"></div>
           <button class="btn btn-cyan mt-4" onclick="addCategory()">+ 添加小类</button>
-          <button class="btn btn-primary mt-4" onclick="saveAll()" style="margin-left: 8px;">💾 保存所有修改</button>
+          <button class="btn btn-primary mt-4" onclick="saveAllNow()" style="margin-left: 8px;">💾 立即保存</button>
+          <span id="cat-save-status" class="text-mute" style="margin-left: 12px; font-size: 13px;"></span>
         </div>
 
         <div class="card-flat mb-6">
@@ -56,6 +57,7 @@
           <p class="text-soft" style="font-size: 13px; margin-bottom: 16px;">AI 会从这里选展馆类型。同样支持自定义描述作为 AI 规则。</p>
           <div id="venue-list"></div>
           <button class="btn btn-cyan mt-4" onclick="addVenue()">+ 添加展馆类型</button>
+          <span id="venue-save-status" class="text-mute" style="margin-left: 12px; font-size: 13px;"></span>
         </div>
 
         <div class="card-flat mb-6">
@@ -130,7 +132,7 @@
         return `
         <div style="border-bottom: 1px solid var(--color-border); padding: 12px 0;">
           <div style="display: grid; grid-template-columns: 30px 1fr 1fr 100px 50px; gap: 10px; align-items: center;">
-            <span style="display:inline-block;width:20px;height:20px;border-radius:6px;background:${c.color};"></span>
+            <span data-role="swatch" style="display:inline-block;width:20px;height:20px;border-radius:6px;background:${c.color};"></span>
             <input class="form-input" data-type="cat" data-idx="${i}" data-field="name" value="${escapeHtml(c.name)}" placeholder="名称">
             <input class="form-input" data-type="cat" data-idx="${i}" data-field="description" value="${escapeHtml(c.description || '')}" placeholder="描述（AI 规则）">
             <input class="form-input" type="color" data-type="cat" data-idx="${i}" data-field="color" value="${c.color}">
@@ -158,7 +160,7 @@
       const el = document.getElementById('venue-list');
       el.innerHTML = venueTypes.map((v, i) => `
         <div style="display: grid; grid-template-columns: 30px 1fr 1fr 100px 50px; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--color-border);">
-          <span style="display:inline-block;width:20px;height:20px;border-radius:6px;background:${v.color};"></span>
+          <span data-role="swatch" style="display:inline-block;width:20px;height:20px;border-radius:6px;background:${v.color};"></span>
           <input class="form-input" data-type="venue" data-idx="${i}" data-field="name" value="${escapeHtml(v.name)}" placeholder="名称">
           <input class="form-input" data-type="venue" data-idx="${i}" data-field="description" value="${escapeHtml(v.description || '')}" placeholder="描述（AI 规则）">
           <input class="form-input" type="color" data-type="venue" data-idx="${i}" data-field="color" value="${v.color}">
@@ -179,7 +181,42 @@
       renderVenues();
     }
 
-    // ============ 通用事件 ============
+    // ============ 通用事件：input 触发 → 同步 state → 自动 debounce 保存 ============
+    // 关键修复：之前用户改完色/描述要手动点"保存所有修改"，但很多人忘了点。
+    // 现在改为：每次 input 改完 800ms 自动 POST，无需手动点保存。
+    let _saveTimer = null;
+    let _saveStatus = 'idle'; // 'idle' | 'pending' | 'saving' | 'saved' | 'error'
+    function markModified() {
+      _saveStatus = 'pending';
+      renderSaveStatus();
+      if (_saveTimer) clearTimeout(_saveTimer);
+      _saveTimer = setTimeout(() => saveAllNow(false), 800);
+    }
+    function renderSaveStatus() {
+      const catEl = document.getElementById('cat-save-status');
+      const venueEl = document.getElementById('venue-save-status');
+      let text = '';
+      let color = 'var(--color-text-mute)';
+      if (_saveStatus === 'pending') { text = '● 修改中...'; color = '#F57C00'; }
+      else if (_saveStatus === 'saving') { text = '● 保存中...'; color = 'var(--color-cyan)'; }
+      else if (_saveStatus === 'saved') { text = '✓ 已自动保存'; color = 'var(--color-cyan)'; }
+      else if (_saveStatus === 'error') { text = '✗ 保存失败，请重试'; color = '#c62828'; }
+      const style = `margin-left: 12px; font-size: 13px; color: ${color};`;
+      if (catEl) catEl.setAttribute('style', style);
+      if (venueEl) venueEl.setAttribute('style', style);
+      if (catEl) catEl.textContent = text;
+      if (venueEl) venueEl.textContent = text;
+      // "已自动保存" 2.5s 后回到 idle
+      if (_saveStatus === 'saved') {
+        setTimeout(() => {
+          if (_saveStatus === 'saved') {
+            _saveStatus = 'idle';
+            renderSaveStatus();
+          }
+        }, 2500);
+      }
+    }
+
     document.getElementById('app').addEventListener('input', e => {
       const t = e.target;
       const type = t.dataset.type;
@@ -188,17 +225,41 @@
       if (!type || idx === undefined) return;
       const list = type === 'cat' ? categories : venueTypes;
       list[idx][field] = e.target.value;
+      // 颜色修改时：左侧色块实时同步
+      if (field === 'color') {
+        const swatch = t.parentElement.querySelector('span[data-role="swatch"]');
+        if (swatch) swatch.style.background = e.target.value;
+      }
+      markModified();
     });
 
-    async function saveAll() {
-      const res = await API.saveCategories(categories, venueTypes);
-      if (res.success) {
-        showToast('✓ 分类库已保存');
-        loadAll();
-      } else {
-        showToast('保存失败：' + (res.error || ''));
+    /** 立即保存（手动按钮调用，或 debounce 触发） */
+    async function saveAllNow(showFeedback = true) {
+      if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+      _saveStatus = 'saving';
+      renderSaveStatus();
+      try {
+        const res = await API.saveCategories(categories, venueTypes);
+        if (res.success) {
+          _saveStatus = showFeedback ? 'saved' : 'saved';
+          renderSaveStatus();
+          if (showFeedback) showToast('✓ 分类库已保存');
+          // 重新拉一份（含可能的 id 变化 / 默认字段补全）
+          loadAll();
+        } else {
+          _saveStatus = 'error';
+          renderSaveStatus();
+          if (showFeedback) showToast('保存失败：' + (res.error || ''));
+        }
+      } catch (e) {
+        _saveStatus = 'error';
+        renderSaveStatus();
+        if (showFeedback) showToast('保存失败：' + (e.message || ''));
       }
     }
+
+    /** 兼容旧名字（如果其他地方还在调） */
+    async function saveAll() { return saveAllNow(true); }
 
     function saveToken() {
       const t = document.getElementById('token-input').value.trim();

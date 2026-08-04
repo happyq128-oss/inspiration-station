@@ -70,6 +70,12 @@ const API = {
   reclassify(id) { return this.request('/api/ai-classify', { method: 'POST', body: { id } }); },
   rescrape(id) { return this.request('/api/scrape', { method: 'POST', body: { id } }); },
 
+  // 批量 AI 整理（用户主动触发）
+  batchClassify(opts = {}) {
+    const body = opts.ids ? { ids: opts.ids } : { all: true };
+    return this.request('/api/batch-classify', { method: 'POST', body });
+  },
+
   // 统计
   getStats() { return this.request('/api/stats'); },
 
@@ -97,6 +103,17 @@ const API = {
   },
   markBackedUp() {
     return this.request('/api/backup', { method: 'POST', body: {} });
+  },
+
+  // 数据修复：把 AI 误标的"已整理"重置回"待整理"
+  resetBadStatus(dryRun = false) {
+    return this.request('/api/reset-bad-status', { method: 'POST', body: { dryRun } });
+  },
+
+  // 规则清理：清掉分类里累积的"学习规则"（rules 数组）
+  // mode: 'all' = 清空所有；'bug' = 只清疑似 bug（占位标题累积的）
+  resetRules(mode = 'bug', dryRun = false) {
+    return this.request('/api/reset-rules', { method: 'POST', body: { mode, dryRun } });
   },
 };
 
@@ -163,8 +180,6 @@ function renderSidebar(activePage) {
   const items = [
     { id: 'home', label: '首页', icon: '🏠', href: '/' },
     { id: 'list', label: '灵感库', icon: '📚', href: '/inspirations' },
-    { id: 'pending', label: '待确认', icon: '✨', href: '/inspirations?status=pending' },
-    { id: 'used', label: '已用', icon: '🏆', href: '/inspirations?status=used' },
   ];
 
   return `
@@ -190,4 +205,97 @@ function renderSidebar(activePage) {
       </div>
     </aside>
   `;
+}
+
+/**
+ * 点击标题就地编辑（不跳转到详情页）
+ * - 单击标题 → 变成输入框
+ * - 回车 / 失焦 → 保存
+ * - Esc → 取消
+ * - 事件不会冒泡到卡片（避免触发跳详情）
+ * @param {string} id - 灵感 ID
+ * @param {HTMLElement} el - 标题元素
+ * @param {Event} e - 点击事件（用于 stopPropagation）
+ * @param {Function} onSaved - 保存后的回调（可选，用于更新 state）
+ */
+async function startEditTitle(id, el, e, onSaved) {
+  if (e) {
+    e.stopPropagation();
+    e.preventDefault();
+  }
+  // 已经在编辑了，不再开新编辑
+  if (el.getAttribute('contenteditable') === 'true') return;
+
+  const originalHtml = el.innerHTML;
+  const currentTitle = (el.dataset.title || el.textContent || '').trim();
+  const isEmpty = !currentTitle || currentTitle === '无标题';
+
+  el.setAttribute('contenteditable', 'true');
+  el.dataset.title = currentTitle;
+  el.textContent = isEmpty ? '' : currentTitle;
+
+  // 全选文字
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  let finished = false;
+  const cleanup = () => {
+    el.removeAttribute('contenteditable');
+  };
+
+  const restoreOriginal = () => {
+    cleanup();
+    el.innerHTML = originalHtml;
+  };
+
+  const save = async () => {
+    if (finished) return;
+    finished = true;
+    cleanup();
+    const newTitle = (el.textContent || '').trim();
+    // 恢复显示
+    el.textContent = newTitle || '无标题';
+
+    if (newTitle === currentTitle || (newTitle === '' && isEmpty)) {
+      return; // 没变化
+    }
+
+    try {
+      const res = await API.updateInspiration(id, { title: newTitle || '无标题' });
+      if (res.success) {
+        el.dataset.title = newTitle;
+        if (typeof onSaved === 'function') {
+          onSaved(id, newTitle || '无标题');
+        }
+        // 静默成功，不弹 toast（太打扰了）
+      } else {
+        showToast('更新失败：' + (res.error || ''), 3000);
+        restoreOriginal();
+      }
+    } catch (err) {
+      showToast('更新失败：' + (err.message || '网络错误'), 3000);
+      restoreOriginal();
+    }
+  };
+
+  const cancel = () => {
+    if (finished) return;
+    finished = true;
+    restoreOriginal();
+  };
+
+  el.addEventListener('blur', () => setTimeout(save, 100), { once: true });
+  el.addEventListener('keydown', (ev) => {
+    ev.stopPropagation();
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      el.blur(); // 触发 save
+    } else if (ev.key === 'Escape') {
+      ev.preventDefault();
+      cancel();
+    }
+  });
 }

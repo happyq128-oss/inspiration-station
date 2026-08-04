@@ -4,8 +4,9 @@
 import { Handler } from '@netlify/functions';
 import { getImage } from './lib/storage';
 import { jsonResponse, errorResponse } from './lib/utils';
+import { withContext } from './lib/handler';
 
-const handler: Handler = async (event) => {
+const _innerHandler: Handler = async (event, _ctx) => {
   if (event.httpMethod === 'OPTIONS') return jsonResponse({ ok: true });
 
   const params = event.queryStringParameters || {};
@@ -28,4 +29,5 @@ const handler: Handler = async (event) => {
   };
 };
 
+const handler = withContext((event, context) => _innerHandler(event, context));
 export { handler };

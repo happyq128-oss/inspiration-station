@@ -33,12 +33,15 @@
     }
 
     async function loadInspiration() {
-      const res = await API.listInspirations({});
-      if (res.success) {
+      try {
+        const res = await API.listInspirations({});
+        if (!res.success) {
+          throw new Error(res.error || '加载失败');
+        }
         insp = res.inspirations.find(i => i.id === id);
         const catRes = await API.getCategories();
         if (catRes.success) {
-          categories = catRes.categories;
+          categories = catRes.categories || [];
           venueTypes = catRes.venueTypes || [];
         }
         if (!insp) {
@@ -55,17 +58,30 @@
           return;
         }
         render();
+      } catch (e) {
+        document.getElementById('app').innerHTML = `
+          ${renderSidebar('list')}
+          <main class="main">
+            <div style="text-align: center; padding: 80px 20px;">
+              <div style="font-size: 48px;">⚠️</div>
+              <div class="mt-4 text-soft">加载失败：${escapeHtml(e.message || '')}</div>
+              <a href="/inspirations" class="btn btn-primary mt-4">返回灵感库</a>
+            </div>
+          </main>
+        `;
       }
     }
 
     function render() {
       const ai = insp.aiSuggestion;
-      const cat = insp.subCategory || ai?.subCategory;
-      const catColor = getCategoryColor(categories, cat);
-      const catName = insp.subCategoryName || ai?.subCategoryName || '未分类';
-      const venue = insp.venueType || ai?.venueType;
-      const venueColor = getCategoryColor(venueTypes, venue);
-      const venueName = insp.venueTypeName || ai?.venueTypeName;
+      // 兼容：老数据 subCategory（单数）转成数组
+      const aiSubCatIds = ai?.subCategories || (ai?.subCategory ? [ai.subCategory] : []);
+      const aiSubCatNames = ai?.subCategoryNames || (ai?.subCategoryName ? [ai.subCategoryName] : []);
+      const aiVenueId = ai?.venueType || '';
+      const aiVenueName = ai?.venueTypeName || '';
+      const catIds = insp.subCategories || (insp.subCategory ? [insp.subCategory] : []);
+      const catNames = insp.subCategoryNames || (insp.subCategoryName ? [insp.subCategoryName] : []);
+      const venueId = insp.venueType || '';
 
       document.getElementById('app').innerHTML = `
         ${renderSidebar('list')}
@@ -79,13 +95,21 @@
               ? `<img src="${escapeHtml(insp.coverImage)}" style="width: 100%; max-height: 400px; object-fit: cover; border-radius: 12px; margin-bottom: 20px;" onerror="this.style.display='none'">`
               : `<div style="width: 100%; height: 200px; background: #f5f5f5; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #999; margin-bottom: 20px;">封面图加载中或暂无</div>`}
 
-            <h1 style="font-size: 22px; font-weight: 800; line-height: 1.4; letter-spacing: -0.3px;">${escapeHtml(insp.title || '无标题')}</h1>
+            <h1 class="insp-title" data-title="${escapeHtml(insp.title || '无标题')}"
+                onclick="startEditTitle('${insp.id}', this, event, onConfirmTitleSaved)"
+                title="点击修改标题"
+                style="font-size: 22px; font-weight: 800; line-height: 1.4; letter-spacing: -0.3px;">
+              ${escapeHtml(insp.title || '无标题')}
+            </h1>
 
             <div class="insp-meta mt-4">
-              <span class="tag" style="background: ${catColor}22; color: ${catColor};">${escapeHtml(catName)}</span>
-              ${venueName ? `<span class="tag" style="background: ${venueColor}22; color: ${venueColor};">${escapeHtml(venueName)}</span>` : ''}
-              <span class="tag tag-status-${insp.status}">${STATUS_LABEL[insp.status]}</span>
-              <span class="tag tag-default">${PLATFORM_LABEL[insp.platform]}</span>
+              ${catNames.map((n, i) => {
+                const c = getCategoryColor(categories, catIds[i]);
+                return `<span class="tag" style="background: ${c}22; color: ${c};">${escapeHtml(n)}</span>`;
+              }).join('')}
+              ${venueId ? `<span class="tag" style="background: ${getCategoryColor(venueTypes, venueId)}22; color: ${getCategoryColor(venueTypes, venueId)};">${escapeHtml(insp.venueTypeName || '')}</span>` : ''}
+              <span class="tag tag-status-${insp.status}">${STATUS_LABEL[insp.status] || insp.status}</span>
+              <span class="tag tag-default">${PLATFORM_LABEL[insp.platform] || insp.platform || ''}</span>
               <span class="text-mute" style="font-size: 12px;">${formatDate(insp.createdAt)}</span>
             </div>
 
@@ -105,36 +129,27 @@
                 <span class="text-bold" style="color: var(--color-pink); font-size: 16px;">${ai.confidence}%</span>
               </div>
               <div style="font-size: 14px; line-height: 1.6;">
-                AI 建议归类为 <strong style="color: ${catColor};">${escapeHtml(ai.subCategoryName)}</strong>
-                ${ai.venueTypeName ? ` · <strong style="color: ${venueColor};">${escapeHtml(ai.venueTypeName)}</strong>` : ''}
+                AI 建议归类为
+                <strong>${escapeHtml(aiSubCatNames.join(' + ') || '未分类')}</strong>
+                ${aiVenueName ? ` · <strong>${escapeHtml(aiVenueName)}</strong>` : ''}
                 ${ai.reasoning ? `<div class="mt-2 text-soft" style="font-size: 13px;">💡 ${escapeHtml(ai.reasoning)}</div>` : ''}
               </div>
               <div class="confidence-bar"><div style="width: ${ai.confidence}%; background: ${ai.confidence >= 70 ? 'var(--color-cyan)' : ai.confidence >= 40 ? '#FFA726' : '#FF6B6B'};"></div></div>
               ${ai.confidence < 60 ? `<div class="mt-2 text-soft" style="font-size: 12px;">⚠️ AI 把握不大，建议你确认或修正</div>` : ''}
             </div>
-          ` : `
-            <div class="card-flat mt-6" style="background: #FFF8E1; border-color: #FFD93D;">
-              <div class="text-bold">⏳ AI 还在整理中...</div>
-              <div class="text-soft mt-2" style="font-size: 13px;">通常 10-30 秒完成。可以先手动选择小类。</div>
-            </div>
-          `}
+          ` : ''}
 
           <div class="card-flat mt-6">
             <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px;">确认 / 修正分类</h2>
 
             <div class="form-group">
-              <label class="form-label">形式小类</label>
+              <label class="form-label">形式小类 <span class="text-mute" style="font-weight: normal;">（可多选）</span></label>
               <div id="cat-options" style="display: flex; gap: 10px; flex-wrap: wrap;"></div>
             </div>
 
             <div class="form-group">
               <label class="form-label">展馆类型</label>
               <div id="venue-options" style="display: flex; gap: 10px; flex-wrap: wrap;"></div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">形式小类</label>
-              <div id="cat-options" style="display: flex; gap: 10px; flex-wrap: wrap;"></div>
             </div>
 
             <div class="form-group">
@@ -145,10 +160,19 @@
             <div class="form-group">
               <label class="form-label">状态</label>
               <div style="display: flex; gap: 8px;">
-                <button class="filter-pill status-btn ${insp.status === 'pending' ? 'active' : ''}" data-status="pending">待整理</button>
-                <button class="filter-pill status-btn ${insp.status === 'organized' ? 'active' : ''}" data-status="organized">已整理</button>
-                <button class="filter-pill status-btn ${insp.status === 'used' ? 'active' : ''}" data-status="used">已用</button>
+                ${(() => {
+                  // 默认状态：
+                  //   - 当前是 pending → 默认 organized（打开 = 手动整理过）
+                  //   - 其他 → 保持现状
+                  const defaultStatus = insp.status === 'pending' ? 'organized' : insp.status;
+                  return `
+                    <button class="filter-pill status-btn ${defaultStatus === 'pending' ? 'active' : ''}" data-status="pending">待整理</button>
+                    <button class="filter-pill status-btn ${defaultStatus === 'organized' ? 'active' : ''}" data-status="organized">已整理</button>
+                    <button class="filter-pill status-btn ${defaultStatus === 'used' ? 'active' : ''}" data-status="used">已用</button>
+                  `;
+                })()}
               </div>
+              ${insp.status === 'pending' ? `<div class="text-mute" style="font-size: 11px; margin-top: 6px;">💡 第一次保存 = 标记为"已整理"（你想留"待整理"再点回去）</div>` : ''}
             </div>
 
             <div class="form-group">
@@ -157,7 +181,7 @@
             </div>
 
             <div class="flex gap-2 mt-6">
-              <button class="btn btn-primary btn-lg" onclick="saveAll()">✓ 保存</button>
+              <button class="btn btn-primary btn-lg" onclick="saveAll()" id="save-btn">✓ 保存</button>
               <button class="btn btn-ghost" onclick="location.href='/inspirations'">取消</button>
               <button class="btn" style="background: #ffebee; color: #c62828; margin-left: auto;" onclick="deleteInspiration()">🗑 删除</button>
             </div>
@@ -165,56 +189,80 @@
         </main>
       `;
 
-      // 渲染小类选项
+      // 渲染小类选项（多选复选框）
       const catOptEl = document.getElementById('cat-options');
-      catOptEl.innerHTML = `
-        <button class="filter-pill cat-option ${!insp.subCategory ? 'active' : ''}" data-cat="" style="${!insp.subCategory ? 'background:#666;color:#fff;border-color:#666;' : ''}">未分类</button>
-      ` + categories.map(c => {
-        const active = insp.subCategory === c.id;
-        return `<button class="filter-pill cat-option ${active ? 'active' : ''}" data-cat="${c.id}" style="${active ? `background:${c.color};color:#fff;border-color:${c.color};` : ''}">
-          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c.color};margin-right:6px;"></span>${c.name}
-        </button>`;
+      catOptEl.innerHTML = categories.map(c => {
+        const checked = catIds.includes(c.id);
+        const bg = checked ? c.color : 'white';
+        const fg = checked ? 'white' : '#333';
+        const borderColor = checked ? c.color : '#ddd';
+        const dotBg = checked ? 'white' : c.color;
+        return `<label class="cat-option ${checked ? 'active' : ''}" data-cat="${c.id}" style="
+          display: inline-flex; align-items: center; padding: 6px 12px; margin: 4px;
+          border: 2px solid ${borderColor};
+          border-radius: 16px; cursor: pointer; font-size: 13px;
+          background: ${bg};
+          color: ${fg};
+          transition: all 0.15s;
+        ">
+          <input type="checkbox" data-cat="${c.id}" ${checked ? 'checked' : ''} style="margin-right: 6px;">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotBg};margin-right:6px;"></span>${escapeHtml(c.name)}
+        </label>`;
       }).join('');
 
-      // 渲染展馆类型选项
+      // 渲染展馆类型选项（单选按钮）
       const venueOptEl = document.getElementById('venue-options');
       venueOptEl.innerHTML = `
-        <button class="filter-pill venue-option ${!insp.venueType ? 'active' : ''}" data-venue="" style="${!insp.venueType ? 'background:#666;color:#fff;border-color:#666;' : ''}">未指定</button>
+        <button class="filter-pill venue-option ${!venueId ? 'active' : ''}" data-venue="" type="button">未指定</button>
       ` + venueTypes.map(v => {
-        const active = insp.venueType === v.id;
-        return `<button class="filter-pill venue-option ${active ? 'active' : ''}" data-venue="${v.id}" style="${active ? `background:${v.color};color:#fff;border-color:${v.color};` : ''}">
-          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.color};margin-right:6px;"></span>${v.name}
+        const active = venueId === v.id;
+        const bg = active ? v.color : '';
+        const fg = active ? '#fff' : '';
+        const borderColor = active ? v.color : '';
+        return `<button class="filter-pill venue-option ${active ? 'active' : ''}" data-venue="${v.id}" type="button" style="${active ? `background:${v.color};color:#fff;border-color:${v.color};` : ''}">
+          <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${v.color};margin-right:6px;"></span>${escapeHtml(v.name)}
         </button>`;
       }).join('');
 
+      // 小类点击（多选）
       catOptEl.addEventListener('click', e => {
-        const btn = e.target.closest('button');
-        if (!btn) return;
-        document.querySelectorAll('.cat-option').forEach(b => {
-          b.classList.remove('active');
-          b.style.background = '';
-          b.style.color = '';
-          b.style.borderColor = '';
-        });
-        btn.classList.add('active');
-        const catId = btn.dataset.cat;
-        if (!catId) {
-          btn.style.background = '#666';
-          btn.style.color = '#fff';
-          btn.style.borderColor = '#666';
-        } else {
+        const label = e.target.closest('label');
+        if (!label) return;
+        e.preventDefault();
+        const checkbox = label.querySelector('input[type=checkbox]');
+        const catId = label.dataset.cat;
+        const colorSpan = label.querySelector('span');
+        const colorVal = colorSpan.style.background;
+        // 真正"切换"——强制以点击结果为准（避免 label 内部点击事件与原生 checkbox 行为冲突）
+        const willCheck = !checkbox.checked;
+        checkbox.checked = willCheck;
+        if (willCheck) {
+          label.classList.add('active');
+          // 取分类颜色：从 options 里再查一次更稳
           const cat = categories.find(c => c.id === catId);
-          btn.style.background = cat.color;
-          btn.style.color = '#fff';
-          btn.style.borderColor = cat.color;
+          if (cat) {
+            label.style.background = cat.color;
+            label.style.color = 'white';
+            label.style.borderColor = cat.color;
+            colorSpan.style.background = 'white';
+          }
+        } else {
+          label.classList.remove('active');
+          const cat = categories.find(c => c.id === catId);
+          if (cat) {
+            label.style.background = 'white';
+            label.style.color = '#333';
+            label.style.borderColor = '#ddd';
+            colorSpan.style.background = cat.color;
+          }
         }
       });
 
-      // 展馆类型点击
+      // 展馆类型点击（单选）
       venueOptEl.addEventListener('click', e => {
         const btn = e.target.closest('button');
         if (!btn) return;
-        document.querySelectorAll('.venue-option').forEach(b => {
+        venueOptEl.querySelectorAll('.venue-option').forEach(b => {
           b.classList.remove('active');
           b.style.background = '';
           b.style.color = '';
@@ -228,12 +276,15 @@
           btn.style.borderColor = '#666';
         } else {
           const venue = venueTypes.find(v => v.id === venueId);
-          btn.style.background = venue.color;
-          btn.style.color = '#fff';
-          btn.style.borderColor = venue.color;
+          if (venue) {
+            btn.style.background = venue.color;
+            btn.style.color = '#fff';
+            btn.style.borderColor = venue.color;
+          }
         }
       });
 
+      // 状态点击（单选）
       document.querySelectorAll('.status-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           document.querySelectorAll('.status-btn').forEach(b => b.classList.remove('active'));
@@ -243,61 +294,103 @@
     }
 
     async function saveAll() {
-      const subCategory = document.querySelector('.cat-option.active')?.dataset.cat || '';
+      const saveBtn = document.getElementById('save-btn');
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = '保存中...';
+      }
+
+      // 形式小类（多选）：所有勾选上的 checkbox
+      const subCategories = [...document.querySelectorAll('.cat-option input[type=checkbox]:checked')]
+        .map(cb => cb.dataset.cat);
       const venueType = document.querySelector('.venue-option.active')?.dataset.venue || '';
       const status = document.querySelector('.status-btn.active')?.dataset.status || 'pending';
-      const tags = document.getElementById('tags-input').value.trim().split(/\s+/).filter(Boolean);
-      const userNote = document.getElementById('note-input').value.trim();
+      const tags = (document.getElementById('tags-input').value || '').trim().split(/\s+/).filter(Boolean);
+      const userNote = (document.getElementById('note-input').value || '').trim();
 
       // 检测是否修改了 AI 建议（用于触发学习）
-      const learnFromCorrection = !!insp.aiSuggestion &&
-        (subCategory !== (insp.aiSuggestion.subCategory || '') ||
-         venueType !== (insp.aiSuggestion.venueType || ''));
+      const oldSubCats = insp.aiSuggestion?.subCategories || (insp.aiSuggestion?.subCategory ? [insp.aiSuggestion.subCategory] : []);
+      const newSubCats = subCategories;
+      const subChanged = oldSubCats.length !== newSubCats.length || oldSubCats.some(s => !newSubCats.includes(s));
+      const venueChanged = venueType !== (insp.aiSuggestion?.venueType || '');
+      const learnFromCorrection = !!insp.aiSuggestion && (subChanged || venueChanged);
 
-      const res = await API.updateInspiration(id, {
-        subCategory: subCategory || undefined,
+      const patch = {
         venueType: venueType || undefined,
         status,
         tags,
         userNote,
-      }, learnFromCorrection);
-      if (res.success) {
-        showToast('✓ 已保存');
-        setTimeout(() => location.href = '/inspirations', 800);
-      } else {
-        showToast('保存失败：' + (res.error || ''));
+        subCategories: subCategories,
+      };
+
+      try {
+        const res = await API.updateInspiration(id, patch, learnFromCorrection);
+        if (res.success) {
+          showToast('✓ 已保存');
+          setTimeout(() => location.href = '/inspirations', 800);
+        } else {
+          showToast('保存失败：' + (res.error || '未知错误'), 4000);
+          if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = '✓ 保存';
+          }
+        }
+      } catch (e) {
+        showToast('保存失败：' + (e.message || '网络错误'), 4000);
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = '✓ 保存';
+        }
       }
     }
 
     async function deleteInspiration() {
       if (!confirm('确定删除这条灵感？此操作不可恢复。')) return;
-      await API.deleteInspirations([id]);
-      showToast('已删除');
-      setTimeout(() => location.href = '/inspirations', 500);
+      try {
+        await API.deleteInspirations([id]);
+        showToast('已删除');
+        setTimeout(() => location.href = '/inspirations', 500);
+      } catch (e) {
+        showToast('删除失败：' + (e.message || ''), 4000);
+      }
     }
 
     async function rescrape() {
       showToast('重新抓取中...');
-      const res = await API.rescrape(id);
-      if (res.success) {
-        insp = res.inspiration;
-        render();
-        showToast('已重新抓取');
-      } else {
-        showToast('抓取失败：' + (res.error || ''));
+      try {
+        const res = await API.rescrape(id);
+        if (res.success) {
+          insp = res.inspiration;
+          render();
+          showToast('已重新抓取');
+        } else {
+          showToast('抓取失败：' + (res.error || ''), 4000);
+        }
+      } catch (e) {
+        showToast('抓取失败：' + (e.message || ''), 4000);
       }
     }
 
     async function reclassify() {
       showToast('AI 重新分类中...');
-      const res = await API.reclassify(id);
-      if (res.success) {
-        insp = res.inspiration;
-        render();
-        showToast('AI 重新分类完成');
-      } else {
-        showToast('失败：' + (res.error || ''));
+      try {
+        const res = await API.reclassify(id);
+        if (res.success) {
+          insp = res.inspiration;
+          render();
+          showToast('AI 重新分类完成');
+        } else {
+          showToast('失败：' + (res.error || ''), 4000);
+        }
+      } catch (e) {
+        showToast('失败：' + (e.message || ''), 4000);
       }
+    }
+
+    /** 标题保存后回调：同步到本地 state 并更新 page-title 副标题 */
+    function onConfirmTitleSaved(id, newTitle) {
+      if (insp && insp.id === id) insp.title = newTitle;
+      document.title = `确认灵感 · ${newTitle || '无标题'}`;
     }
   </script>
 </body>

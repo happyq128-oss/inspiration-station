@@ -5,14 +5,13 @@
 //   2. POST /api/add {"url": "xxx", ...}
 //   3. POST /api/add {"url": "xxx", "imageBase64": "..."} 截图模式
 
-import { Handler } from '@netlify/functions';
+import { Handler, HandlerContext } from '@netlify/functions';
 import { Inspiration, detectPlatform } from './lib/types';
-import { addInspiration, findByUrl, saveImage, loadData } from './lib/storage';
+import { addInspiration, findByUrl, saveImage } from './lib/storage';
 import { jsonResponse, errorResponse, generateId, requireAuth, isValidUrl } from './lib/utils';
-import { scrapePage } from './lib/scraper';
-import { aiClassify } from './lib/ai';
+import { withContext } from './lib/handler';
 
-const handler: Handler = async (event) => {
+const _innerHandler: Handler = async (event, context) => {
   if (event.httpMethod === 'OPTIONS') return jsonResponse({ ok: true });
   if (event.httpMethod !== 'GET' && event.httpMethod !== 'POST') {
     return errorResponse('Method not allowed', 405);
@@ -87,11 +86,11 @@ const handler: Handler = async (event) => {
       }
     }
 
-    // 2. 创建占位记录
+    // 2. 创建占位记录（status: pending — AI 整理在网页端批量触发）
     const placeholder: Inspiration = {
       id,
       url: url || `screenshot://${id}`,  // 没 URL 就用占位
-      title: providedTitle || '加载中...',
+      title: providedTitle || '待整理',
       platform,
       coverImage: coverImageUrl,
       status: 'pending',
@@ -101,50 +100,16 @@ const handler: Handler = async (event) => {
     };
     await addInspiration(placeholder);
 
-    // 3. 异步 AI 分类
-    (async () => {
-      try {
-        const data = await loadData();
-
-        let titleForAI = providedTitle || '';
-        let descriptionForAI: string | undefined;
-
-        // 如果没图，尝试抓取
-        if (!imageBase64 && url && url.startsWith('http')) {
-          const scraped = await scrapePage(url);
-          titleForAI = scraped.title || providedTitle || '';
-          descriptionForAI = scraped.description;
-        }
-
-        const aiResult = await aiClassify({
-          title: titleForAI,
-          description: descriptionForAI,
-          imageBase64: imageBase64,
-          platform,
-          categories: data.categories,
-          venueTypes: data.venueTypes,
-        });
-
-        const { updateInspiration } = await import('./lib/storage');
-        await updateInspiration(id, {
-          title: titleForAI || providedTitle || '无标题',
-          description: descriptionForAI,
-          aiSuggestion: aiResult,
-          updatedAt: new Date().toISOString(),
-        });
-        console.log(`[${id}] AI: ${aiResult.subCategoryName} / ${aiResult.venueTypeName} (${aiResult.confidence}%)`);
-      } catch (e) {
-        console.error(`[${id}] Async error:`, e);
-      }
-    })();
+    // 3. （不再自动 AI 分类）—— 改为用户主动在网页端批量触发 /api/batch-classify
+    //    这样 iPhone 录入秒回，AI 调用可控、可在有空时统一处理
 
     return jsonResponse({
       success: true,
       dedup: false,
       inspiration: placeholder,
       message: imageBase64
-        ? '已保存截图，AI 后台看图分类中'
-        : '已保存，AI 后台整理中',
+        ? '图片已存，待 AI 整理'
+        : '已保存，待 AI 整理',
     }, 201);
   } catch (e: any) {
     console.error('Add inspiration error:', e);
@@ -197,4 +162,5 @@ function looksLikeUrl(s: string): boolean {
   return false;
 }
 
+const handler = withContext((event, context) => _innerHandler(event, context));
 export { handler };

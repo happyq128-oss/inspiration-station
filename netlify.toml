@@ -36,6 +36,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/batch-classify"
+  to = "/.netlify/functions/batch-classify"
+  status = 200
+
+[[redirects]]
   from = "/api/scrape"
   to = "/.netlify/functions/scrape-page"
   status = 200
@@ -58,6 +63,16 @@
 [[redirects]]
   from = "/api/backup"
   to = "/.netlify/functions/backup-data"
+  status = 200
+
+[[redirects]]
+  from = "/api/reset-bad-status"
+  to = "/.netlify/functions/reset-bad-status"
+  status = 200
+
+[[redirects]]
+  from = "/api/reset-rules"
+  to = "/.netlify/functions/reset-rules"
   status = 200
 
 [[redirects]]

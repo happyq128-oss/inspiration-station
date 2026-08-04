@@ -5,8 +5,9 @@ import { Handler } from '@netlify/functions';
 import { deleteInspiration } from './lib/storage';
 import { loadData, saveData } from './lib/storage';
 import { jsonResponse, errorResponse, requireAuth } from './lib/utils';
+import { withContext } from './lib/handler';
 
-const handler: Handler = async (event) => {
+const _innerHandler: Handler = async (event, _ctx) => {
   if (event.httpMethod === 'OPTIONS') return jsonResponse({ ok: true });
   if (event.httpMethod !== 'POST' && event.httpMethod !== 'DELETE') {
     return errorResponse('Method not allowed', 405);
@@ -37,4 +38,5 @@ const handler: Handler = async (event) => {
   }
 };
 
+const handler = withContext((event, context) => _innerHandler(event, context));
 export { handler };
