@@ -136,7 +136,26 @@ ${venueLib}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 必须只返回 JSON，不要任何解释：
-{"categories": ["multimedia", "installation"], "venueType": "museum", "confidence": 85, "reasoning": "图中是 LED 屏 + 投影组合的互动装置，博物馆暗空间 + 文物展柜风格明显"}
+{
+  "categories": ["multimedia", "installation"],
+  "venueType": "museum",
+  "confidence": 85,
+  "reasoning": "图中是 LED 屏 + 投影组合的互动装置，博物馆暗空间 + 文物展柜风格明显",
+  "visualDescription": "深色展厅中一座 2 米高的六边形 LED 装置，表面播放蓝色水波纹影像；地面是灰色水泥，周围用低角度暖光聚光，整体科技感强、氛围沉静",
+  "visualTags": ["深色", "LED屏", "蓝色", "科技感", "聚光", "几何", "互动"]
+}
+
+【visualDescription 写作要求】(供"帮你找"搜索用)
+- 100-150 字，画面感强，让人读文字就能"看见"这张图
+- 重点写视觉特征：颜色（深/浅/暖/冷 + 具体色）、材质（金属/木/玻璃/混凝土/织物等）、光线（聚光/漫射/明/暗/暖/冷）、空间感（高/低/开阔/压抑）、构图（中心/对称/散点/阵列）、动态元素（屏/光/影/水）
+- 不写展品名称、博物馆名等具体实体（避免搜索时过拟合）
+- 不写"这张图是..."这种元描述，直接描述画面
+
+【visualTags 写作要求】
+- 5-8 个关键词，逗号分隔
+- 优先视觉特征词：颜色名、材质名、光线词、构图词
+- 避免抽象词（"美""有感觉""不错"）
+- 用于"找图"时做关键词召回
 
 【confidence 指导】
 - 90-100：视觉特征非常明确（≥2 个强信号）
@@ -314,6 +333,12 @@ export async function aiClassify(input: AIInput): Promise<AIClassification> {
       venueTypeName: venue?.name || venueTypes[0].name,
       confidence: Math.max(0, Math.min(100, Number(parsed.confidence) || 0)),
       reasoning: parsed.reasoning || '',
+      visualDescription: typeof parsed.visualDescription === 'string'
+        ? parsed.visualDescription.trim().slice(0, 300)  // 限长 300
+        : '',
+      visualTags: Array.isArray(parsed.visualTags)
+        ? parsed.visualTags.filter((t: any) => typeof t === 'string').slice(0, 10).map((t: string) => t.trim())
+        : [],
     };
   } catch (e: any) {
     console.error('AI classify error:', e);
@@ -329,5 +354,7 @@ function defaultClassification(reason: string): AIClassification {
     venueTypeName: '博物馆',
     confidence: 0,
     reasoning: reason + '，需要手动分类',
+    visualDescription: '',
+    visualTags: [],
   };
 }

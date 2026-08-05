@@ -6,6 +6,7 @@ import { aiClassify } from './lib/ai';
 import { updateInspiration, loadData } from './lib/storage';
 import { jsonResponse, errorResponse, requireAuth } from './lib/utils';
 import { withContext } from './lib/handler';
+import { embedText, buildSearchableText } from './lib/embedding';
 
 const _innerHandler: Handler = async (event, context) => {
   if (event.httpMethod === 'OPTIONS') return jsonResponse({ ok: true });
@@ -45,8 +46,25 @@ const _innerHandler: Handler = async (event, context) => {
       venueTypes: data.venueTypes,
     });
 
+    // 顺便算 embedding（"帮你找"用）—— 仅当 AI 给了 visualDescription 时
+    let visualEmbedding: number[] | undefined;
+    if (aiResult.visualDescription) {
+      const searchText = buildSearchableText({
+        visualDescription: aiResult.visualDescription,
+        visualTags: aiResult.visualTags,
+        title: insp.title,
+        subCategoryNames: aiResult.subCategoryNames,
+        venueTypeName: aiResult.venueTypeName,
+      });
+      const vec = await embedText(searchText);
+      if (vec) visualEmbedding = vec;
+    }
+
     const updated = await updateInspiration(id, {
       aiSuggestion: aiResult,
+      visualDescription: aiResult.visualDescription || undefined,
+      visualTags: aiResult.visualTags || undefined,
+      visualEmbedding,
       updatedAt: new Date().toISOString(),
     });
 

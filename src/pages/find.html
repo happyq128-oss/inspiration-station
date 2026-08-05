@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>帮你找 · 灵感站</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    /* Find 页面专属 */
+    .find-hero {
+      background: linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%);
+      border-radius: 20px;
+      padding: 40px 32px;
+      margin-bottom: 24px;
+      position: relative;
+    }
+    .find-hero h1 {
+      font-size: 28px;
+      font-weight: 800;
+      color: #E65100;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+    .find-hero p {
+      color: #5D4037;
+      font-size: 15px;
+      margin-bottom: 24px;
+      line-height: 1.6;
+    }
+    .find-search-wrap {
+      display: flex;
+      gap: 12px;
+      align-items: stretch;
+      max-width: 800px;
+    }
+    .find-search-input {
+      flex: 1;
+      padding: 16px 20px;
+      font-size: 16px;
+      border: 2px solid #FFB74D;
+      border-radius: 12px;
+      background: white;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .find-search-input:focus {
+      border-color: #FF9800;
+      box-shadow: 0 0 0 4px rgba(255, 152, 0, 0.15);
+    }
+    .find-search-btn {
+      padding: 16px 32px;
+      background: #FF9800;
+      color: white;
+      font-weight: 700;
+      font-size: 16px;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    .find-search-btn:hover { background: #F57C00; }
+    .find-search-btn:disabled { background: #ccc; cursor: not-allowed; }
+
+    /* 提示卡片 */
+    .find-empty {
+      background: white;
+      border: 2px dashed #ddd;
+      border-radius: 16px;
+      padding: 60px 24px;
+      text-align: center;
+      color: #999;
+    }
+    .find-empty-icon { font-size: 64px; margin-bottom: 16px; }
+    .find-empty h3 { font-size: 18px; font-weight: 600; color: #666; margin-bottom: 8px; }
+    .find-empty p { font-size: 14px; line-height: 1.6; }
+
+    .find-example-chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+      justify-content: center;
+    }
+    .find-example-chip {
+      background: white;
+      border: 1px solid #FFB74D;
+      color: #E65100;
+      padding: 6px 14px;
+      border-radius: 16px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .find-example-chip:hover {
+      background: #FF9800;
+      color: white;
+    }
+
+    /* 过滤条 */
+    .find-filter-bar {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 16px;
+      padding: 12px 16px;
+      background: white;
+      border-radius: 12px;
+      border: 1px solid #eee;
+    }
+    .find-filter-bar label {
+      font-size: 13px;
+      color: #666;
+      font-weight: 500;
+    }
+    .find-filter-bar select {
+      padding: 6px 10px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: white;
+      font-size: 13px;
+    }
+
+    /* 结果网格 */
+    .find-results {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .find-card {
+      background: white;
+      border: 1px solid #eee;
+      border-radius: 16px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      flex-direction: column;
+    }
+    .find-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+      border-color: #FFB74D;
+    }
+    .find-card-cover {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #f5f5f5;
+      object-fit: cover;
+      display: block;
+    }
+    .find-card-cover-placeholder {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #f5f5f5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #999;
+      font-size: 13px;
+    }
+    .find-card-body {
+      padding: 14px 16px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .find-card-similarity {
+      display: inline-block;
+      background: linear-gradient(90deg, #FF9800 0%, #FFB74D 100%);
+      color: white;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 10px;
+      align-self: flex-start;
+    }
+    .find-card-similarity.low { background: #BDBDBD; }
+    .find-card-similarity.mid { background: linear-gradient(90deg, #FFB74D 0%, #FFCC80 100%); color: #E65100; }
+    .find-card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #222;
+      line-height: 1.4;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .find-card-desc {
+      font-size: 13px;
+      color: #666;
+      line-height: 1.6;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+    }
+    .find-card-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: auto;
+    }
+    .find-card-tag {
+      font-size: 11px;
+      padding: 2px 8px;
+      background: #FFF3E0;
+      color: #E65100;
+      border-radius: 8px;
+    }
+    .find-card-meta {
+      display: flex;
+      gap: 6px;
+      font-size: 11px;
+      color: #999;
+    }
+    .find-card-link {
+      color: #1976D2;
+      text-decoration: none;
+      font-size: 11px;
+    }
+    .find-card-link:hover { text-decoration: underline; }
+
+    /* 状态指示 */
+    .find-status {
+      text-align: center;
+      padding: 24px;
+      color: #666;
+      font-size: 14px;
+    }
+    .find-status.error { color: #C62828; }
+  </style>
+</head>
+<body>
+  <div class="app" id="app"></div>
+  <script src="/js/api.js"></script>
+  <script>
+    let state = {
+      categories: [],
+      venueTypes: [],
+      results: [],
+      loading: false,
+      lastQuery: '',
+      lastDuration: 0,
+      filterVenue: '',
+      filterSub: '',
+      exampleChips: [
+        '深色调、暖光、聚光照明下的展柜',
+        '现代材质 + 镜面反射 + 科技感',
+        '中式对称布局 + 木质暖色',
+        '高空间、阵列装置、白色主调',
+        '红黑配色、革命历史照片墙',
+      ],
+    };
+
+    document.getElementById('app').innerHTML = `
+      ${renderSidebar('find')}
+      <main class="main">
+        <!-- 顶部 Hero 区域 -->
+        <div class="find-hero">
+          <h1>🔍 帮你找</h1>
+          <p>脑中想到一张图？用一段话描述你想要的画面，AI 会帮你从灵感库里找出最像的素材。</p>
+          <div class="find-search-wrap">
+            <input
+              type="text"
+              class="find-search-input"
+              id="search-input"
+              placeholder="例：一个用全息投影展示文物的小展柜，深色调，圆形设计..."
+              maxlength="500"
+              onkeydown="if(event.key==='Enter') doSearch()"
+            />
+            <button class="find-search-btn" id="search-btn" onclick="doSearch()">🔍 找找看</button>
+          </div>
+          <div class="find-example-chips">
+            ${state.exampleChips.map(q => `<div class="find-example-chip" onclick="useExample('${escapeHtml(q)}')">${escapeHtml(q)}</div>`).join('')}
+          </div>
+        </div>
+
+        <!-- 过滤条 -->
+        <div class="find-filter-bar" id="filter-bar" style="display: none;">
+          <label>展馆类型：</label>
+          <select id="filter-venue" onchange="onFilterChange()">
+            <option value="">全部</option>
+          </select>
+          <label>形式小类：</label>
+          <select id="filter-sub" onchange="onFilterChange()">
+            <option value="">全部</option>
+          </select>
+          <div id="result-summary" style="margin-left: auto; color: #666; font-size: 13px;"></div>
+        </div>
+
+        <!-- 状态/结果区域 -->
+        <div id="result-area">
+          <div class="find-empty">
+            <div class="find-empty-icon">🎨</div>
+            <h3>开始你的第一次"找图"</h3>
+            <p>在上面输入框里描述你脑海中想到的画面，<br>或点下方示例直接体验 ✨</p>
+          </div>
+        </div>
+      </main>
+    `;
+
+    // 加载分类
+    (async () => {
+      try {
+        const res = await API.getCategories();
+        state.categories = res.categories || [];
+        state.venueTypes = res.venueTypes || [];
+
+        // 填 filter
+        const venueSel = document.getElementById('filter-venue');
+        state.venueTypes.forEach(v => {
+          const opt = document.createElement('option');
+          opt.value = v.id;
+          opt.textContent = v.name;
+          venueSel.appendChild(opt);
+        });
+        const subSel = document.getElementById('filter-sub');
+        state.categories.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = c.name;
+          subSel.appendChild(opt);
+        });
+      } catch (e) {
+        console.error('加载分类失败:', e);
+      }
+    })();
+
+    function useExample(q) {
+      document.getElementById('search-input').value = q;
+      doSearch();
+    }
+
+    function onFilterChange() {
+      state.filterVenue = document.getElementById('filter-venue').value;
+      state.filterSub = document.getElementById('filter-sub').value;
+      if (state.lastQuery) doSearch();
+    }
+
+    async function doSearch() {
+      const input = document.getElementById('search-input');
+      const query = (input.value || '').trim();
+      if (!query) {
+        showToast('描述一下你想要的画面～');
+        input.focus();
+        return;
+      }
+      if (query.length < 4) {
+        showToast('描述太短了，多说点特征吧（4 字以上）');
+        return;
+      }
+
+      state.loading = true;
+      state.lastQuery = query;
+      const btn = document.getElementById('search-btn');
+      btn.disabled = true;
+      btn.textContent = '🔍 找图中...';
+
+      const area = document.getElementById('result-area');
+      area.innerHTML = `<div class="find-status">🤖 正在用 AI 编码你的描述，并在灵感库中比对最像的素材...</div>`;
+      document.getElementById('filter-bar').style.display = 'flex';
+
+      try {
+        const res = await API.searchByDescription({
+          query,
+          topK: 12,
+          venueType: state.filterVenue,
+          subCategory: state.filterSub,
+        });
+
+        state.lastDuration = res.duration || 0;
+        state.results = res.results || [];
+        renderResults(res);
+      } catch (e) {
+        area.innerHTML = `<div class="find-status error">❌ 搜索失败：${escapeHtml(e.message || '未知错误')}</div>`;
+      } finally {
+        state.loading = false;
+        btn.disabled = false;
+        btn.textContent = '🔍 找找看';
+      }
+    }
+
+    function renderResults(res) {
+      const area = document.getElementById('result-area');
+      const summary = document.getElementById('result-summary');
+
+      if (res.message) {
+        area.innerHTML = `
+          <div class="find-empty">
+            <div class="find-empty-icon">📭</div>
+            <h3>${escapeHtml(res.message)}</h3>
+            <p>先到灵感库确认几条素材，AI 会自动给它们生成"视觉描述"，就能搜了～</p>
+            <p style="margin-top: 16px;"><a class="btn btn-cyan" href="/inspirations" style="text-decoration: none; display: inline-block;">去灵感库 →</a></p>
+          </div>
+        `;
+        summary.textContent = '';
+        return;
+      }
+
+      if (state.results.length === 0) {
+        area.innerHTML = `
+          <div class="find-empty">
+            <div class="find-empty-icon">😶</div>
+            <h3>没找到匹配的素材</h3>
+            <p>试试更具体的描述，或者换个角度描述（颜色 / 材质 / 光线 / 空间感）</p>
+          </div>
+        `;
+        summary.textContent = `0 / ${res.totalCandidates} 条`;
+        return;
+      }
+
+      summary.innerHTML = `找到 <b style="color: #E65100;">${state.results.length}</b> 条匹配（共扫描 ${res.totalCandidates} 条）· 用时 ${state.lastDuration}ms · 本次现算 embedding ${res.computedNow} 条`;
+
+      area.innerHTML = `<div class="find-results">${state.results.map((r, idx) => renderCard(r, idx)).join('')}</div>`;
+    }
+
+    function renderCard(r, idx) {
+      const cover = r.coverImage
+        ? `<img class="find-card-cover" src="${escapeHtml(r.coverImage)}" alt="" loading="lazy" onerror="this.outerHTML='<div class=&quot;find-card-cover-placeholder&quot;>无图</div>'">`
+        : `<div class="find-card-cover-placeholder">无图</div>`;
+
+      // 相似度分级
+      const sim = r.similarity || 0;
+      let simClass = '';
+      let simLabel = (sim * 100).toFixed(1) + '%';
+      if (sim < 0.3) simClass = 'low';
+      else if (sim < 0.5) simClass = 'mid';
+
+      const tags = (r.visualTags || []).slice(0, 6).map(t =>
+        `<span class="find-card-tag">${escapeHtml(t)}</span>`
+      ).join('');
+
+      const catNames = (r.subCategoryNames || []).join(' + ');
+      const venueName = r.venueTypeName || '';
+
+      return `
+        <div class="find-card" onclick="location.href='/confirm?id=${escapeHtml(r.id)}'">
+          ${cover}
+          <div class="find-card-body">
+            <div class="find-card-similarity ${simClass}">相似度 ${simLabel}</div>
+            <div class="find-card-title">${escapeHtml(r.title || '无标题')}</div>
+            <div class="find-card-desc">${escapeHtml(r.visualDescription || '（暂无视觉描述）')}</div>
+            <div class="find-card-tags">${tags}</div>
+            <div class="find-card-meta">
+              ${catNames ? `<span>${escapeHtml(catNames)}</span> · ` : ''}
+              ${venueName ? `<span>${escapeHtml(venueName)}</span> · ` : ''}
+              <a class="find-card-link" href="${escapeHtml(r.url || '#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看原帖</a>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+  </script>
+</body>
+</html>

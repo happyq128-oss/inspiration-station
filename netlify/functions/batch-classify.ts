@@ -12,6 +12,7 @@ import { scrapePage } from './lib/scraper';
 import { aiClassify } from './lib/ai';
 import { jsonResponse, errorResponse, requireAuth } from './lib/utils';
 import { withContext } from './lib/handler';
+import { embedText, buildSearchableText } from './lib/embedding';
 
 interface BatchResult {
   id: string;
@@ -129,6 +130,20 @@ const _innerHandler: Handler = async (event, context) => {
           venueTypes: data.venueTypes,
         });
 
+        // 算 embedding（"帮你找"用）—— 仅当 AI 给了 visualDescription
+        let visualEmbedding: number[] | undefined;
+        if (aiResult.visualDescription) {
+          const searchText = buildSearchableText({
+            visualDescription: aiResult.visualDescription,
+            visualTags: aiResult.visualTags,
+            title: titleForAI || insp.title,
+            subCategoryNames: aiResult.subCategoryNames,
+            venueTypeName: aiResult.venueTypeName,
+          });
+          const vec = await embedText(searchText);
+          if (vec) visualEmbedding = vec;
+        }
+
         await updateInspiration(id, {
           title: titleForAI || insp.title || '无标题',
           description: descriptionForAI,
@@ -137,6 +152,9 @@ const _innerHandler: Handler = async (event, context) => {
           subCategoryNames: aiResult.subCategoryNames,
           venueType: aiResult.venueType,
           venueTypeName: aiResult.venueTypeName,
+          visualDescription: aiResult.visualDescription || undefined,
+          visualTags: aiResult.visualTags || undefined,
+          visualEmbedding,
           // 状态保持 pending——AI 只给建议，等用户手动进 confirm 确认后才变 organized
           status: 'pending',
           updatedAt: new Date().toISOString(),

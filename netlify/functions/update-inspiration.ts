@@ -14,6 +14,7 @@ const ALLOWED_FIELDS = [
   'title', 'subCategories', 'subCategoryNames',
   'venueType', 'venueTypeName',
   'status', 'userNote', 'tags', 'description',
+  'visualDescription', 'visualTags', 'visualEmbedding',
 ];
 
 const _innerHandler: Handler = async (event, _ctx) => {

@@ -76,6 +76,16 @@
   status = 200
 
 [[redirects]]
+  from = "/api/search-by-description"
+  to = "/.netlify/functions/search-by-description"
+  status = 200
+
+[[redirects]]
+  from = "/api/backfill-visual-desc"
+  to = "/.netlify/functions/backfill-visual-desc"
+  status = 200
+
+[[redirects]]
   from = "/api/health"
   to = "/.netlify/functions/health-check"
   status = 200
@@ -95,6 +105,11 @@
 [[redirects]]
   from = "/inspirations"
   to = "/pages/inspirations.html"
+  status = 200
+
+[[redirects]]
+  from = "/find"
+  to = "/pages/find.html"
   status = 200
 
 [[redirects]]

@@ -93,6 +93,10 @@ export interface AIClassification {
   venueTypeName: string;
   confidence: number;
   reasoning?: string;
+  // 视觉描述（"帮你找"用：100-150 字画面感描述）
+  visualDescription?: string;
+  // 视觉关键词（5-8 个，逗号分隔）
+  visualTags?: string[];
 }
 
 export interface Inspiration {
@@ -112,6 +116,11 @@ export interface Inspiration {
   status: InspirationStatus;
   // AI 建议
   aiSuggestion?: AIClassification;
+  // 视觉描述（"帮你找"搜索用）
+  visualDescription?: string;
+  visualTags?: string[];
+  // 预计算的 embedding 向量（1024 维），加速搜索
+  visualEmbedding?: number[];
   // 用户补充
   userNote?: string;
   tags?: string[];

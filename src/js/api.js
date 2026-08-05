@@ -115,6 +115,23 @@ const API = {
   resetRules(mode = 'bug', dryRun = false) {
     return this.request('/api/reset-rules', { method: 'POST', body: { mode, dryRun } });
   },
+
+  // "帮你找"：用一段描述在灵感库中找最匹配的素材
+  // body: { query, topK, venueType?, subCategory? }
+  searchByDescription({ query, topK = 10, venueType = '', subCategory = '' } = {}) {
+    return this.request('/api/search-by-description', {
+      method: 'POST',
+      body: { query, topK, venueType, subCategory },
+    });
+  },
+
+  // 一次性 backfill：给老数据补 visualDescription / visualTags / embedding
+  // limit: 同步模式每批处理多少条（默认 1，避免 Netlify 10s timeout）
+  backfillVisualDesc({ limit = 1, onlyMissing = true, ids = null } = {}) {
+    const body = { limit, onlyMissing };
+    if (ids && ids.length > 0) body.ids = ids;
+    return this.request('/api/backfill-visual-desc', { method: 'POST', body });
+  },
 };
 
 // 全局工具
@@ -180,6 +197,7 @@ function renderSidebar(activePage) {
   const items = [
     { id: 'home', label: '首页', icon: '🏠', href: '/' },
     { id: 'list', label: '灵感库', icon: '📚', href: '/inspirations' },
+    { id: 'find', label: '帮你找', icon: '🔍', href: '/find' },
   ];
 
   return `
