@@ -86,6 +86,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/backfill-thumbnails"
+  to = "/.netlify/functions/backfill-thumbnails"
+  status = 200
+
+[[redirects]]
   from = "/api/health"
   to = "/.netlify/functions/health-check"
   status = 200

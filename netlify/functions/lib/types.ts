@@ -105,6 +105,7 @@ export interface Inspiration {
   title: string;
   platform: Platform;
   coverImage?: string;
+  coverThumbnail?: string;  // 240px 缩略图 URL（Excel 嵌入用）
   description?: string;
   // 形式小类（多选）
   subCategories?: string[];

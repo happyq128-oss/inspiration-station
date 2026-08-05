@@ -7,7 +7,8 @@
 
 import { Handler, HandlerContext } from '@netlify/functions';
 import { Inspiration, detectPlatform } from './lib/types';
-import { addInspiration, findByUrl, saveImage } from './lib/storage';
+import { addInspiration, findByUrl } from './lib/storage';
+import { processAndSaveImage } from './lib/image';
 import { jsonResponse, errorResponse, generateId, requireAuth, isValidUrl } from './lib/utils';
 import { withContext } from './lib/handler';
 
@@ -82,15 +83,21 @@ const _innerHandler: Handler = async (event, context) => {
       platform = 'unspecified';
     }
 
-    // 1. 存截图
+    // 1. 存截图：sharp 压缩成 640px 主图 + 240px 缩略图，节省存储和带宽
     let coverImageUrl: string | undefined;
+    let coverThumbnailUrl: string | undefined;
     if (imageBase64 && typeof imageBase64 === 'string') {
       try {
         const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
         const buffer = Buffer.from(cleanBase64, 'base64');
-        if (buffer.length > 0 && buffer.length < 5 * 1024 * 1024) {
-          await saveImage(id, buffer, 'image/jpeg');
-          coverImageUrl = `/api/image/${id}`;
+        if (buffer.length > 0) {
+          const result = await processAndSaveImage(id, buffer);
+          if (result) {
+            coverImageUrl = result.mainUrl;
+            coverThumbnailUrl = result.thumbUrl;
+          } else {
+            console.warn(`[${id}] Image process failed, skip`);
+          }
         }
       } catch (e) {
         console.warn(`[${id}] Save image error:`, e);
@@ -104,6 +111,7 @@ const _innerHandler: Handler = async (event, context) => {
       title: providedTitle || '待整理',
       platform,
       coverImage: coverImageUrl,
+      coverThumbnail: coverThumbnailUrl,
       status: 'pending',
       createdAt: now,
       updatedAt: now,

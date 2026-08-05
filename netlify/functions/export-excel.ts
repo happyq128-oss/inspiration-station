@@ -10,6 +10,7 @@ import { Handler } from '@netlify/functions';
 import ExcelJS from 'exceljs';
 import sharp from 'sharp';
 import { loadData, getImage } from './lib/storage';
+import { getThumbnailBase64 } from './lib/image';
 import { PLATFORM_LABELS, Inspiration } from './lib/types';
 import { requireAuth } from './lib/utils';
 import { withContext } from './lib/handler';
@@ -90,7 +91,7 @@ const _innerHandler: Handler = async (event, _ctx) => {
   // 未分类 sheet 仅在有内容时生成
   const sheetOrder = ['museum', 'memorial', 'corporate', 'unclassified'] as const;
 
-  // 1) 先把每条灵感的缩略图预拉好（控制并发数 6，避免 sharp cold start 阻塞）
+  // 1) 先把每条灵感的缩略图预拉好（用预存的 240px 缩略图，避免现场 sharp 冷启动超时）
   const allItems = filtered;
   const thumbCache = new Map<string, Buffer | null>();
   const CONCURRENCY = 6;
@@ -101,10 +102,11 @@ const _innerHandler: Handler = async (event, _ctx) => {
         thumbCache.set(insp.id, null);
         return;
       }
-      try {
-        const buf = await getLocalThumbnail(insp.coverImage, origin);
-        thumbCache.set(insp.id, buf);
-      } catch {
+      // 从 Blobs 直接取 240px 缩略图（base64 → buffer）
+      const b64 = await getThumbnailBase64(insp.id);
+      if (b64) {
+        thumbCache.set(insp.id, Buffer.from(b64, 'base64'));
+      } else {
         thumbCache.set(insp.id, null);
       }
     }));
@@ -171,7 +173,7 @@ async function buildSheet(
 
   // 删除了"状态""描述"两列
   sheet.columns = [
-    { header: '封面', key: 'cover', width: 18 },
+    { header: '封面', key: 'cover', width: 30 },  // 加宽到容纳 200px 图片
     { header: '标题', key: 'title', width: 40 },
     { header: '形式小类', key: 'subCategory', width: 22 },
     { header: '展馆类型', key: 'venueType', width: 12 },
@@ -210,7 +212,7 @@ async function buildSheet(
       tags: (insp.tags || []).join(' '),
     });
 
-    row.height = 110;
+    row.height = 160;  // 容纳 150px 图片
     row.alignment = { vertical: 'middle', wrapText: true };
 
     // 链接样式：只让 URL 字段带下划线 + 蓝色（Excel 默认行为，保留可点击）
@@ -219,10 +221,41 @@ async function buildSheet(
       urlCell.font = { color: { argb: 'FF0563C1' }, underline: true };
     }
 
-    // 封面列：暂不嵌入图（sharp + Blobs 在 Netlify 函数 cold start 太慢）
-    // 改成"封面链接"：让用户点 URL 直接打开原图（保持可点击）
+    // 封面列：嵌入预存的 240px 缩略图（直接从 Blobs 取，不再现场 sharp 处理）
+    // 缩略图缺失时降级为"📷 查看封面"超链接（保持可点击原图）
     const coverCell = row.getCell('cover');
-    if (insp.coverImage) {
+    const thumbBuf = thumbCache.get(insp.id);
+    if (thumbBuf) {
+      try {
+        const imageId = workbook.addImage({
+          buffer: thumbBuf,
+          extension: 'jpeg',
+        });
+        // 240px 缩略图：宽 240px，高按比例（coverImage 4:3 假设 180px）
+        // 实际单元格宽 18 (Excel 单位 = 字符宽 ≈ 像素/7) ≈ 126px，我们让图稍大点
+        sheet.addImage(imageId, {
+          tl: { col: 0, row: row.number - 1 },  // 0-based
+          ext: { width: 220, height: 165 },
+        });
+        // 让 cell 居中显示（虽然有 image，cell 还是要一个值）
+        coverCell.value = '';
+      } catch (e: any) {
+        console.warn(`[export] embed image failed for ${insp.id}: ${e.message}`);
+        // 降级：放超链接
+        if (insp.coverImage) {
+          const fullUrl = insp.coverImage.startsWith('http')
+            ? insp.coverImage
+            : `${origin}${insp.coverImage.startsWith('/') ? '' : '/'}${insp.coverImage}`;
+          coverCell.value = { text: '📷 查看封面', hyperlink: fullUrl };
+          coverCell.font = { color: { argb: 'FF0563C1' }, underline: true };
+          coverCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        } else {
+          coverCell.value = '无封面';
+          coverCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        }
+      }
+    } else if (insp.coverImage) {
+      // 没缩略图（原图）→ 降级为超链接
       const fullUrl = insp.coverImage.startsWith('http')
         ? insp.coverImage
         : `${origin}${insp.coverImage.startsWith('/') ? '' : '/'}${insp.coverImage}`;
