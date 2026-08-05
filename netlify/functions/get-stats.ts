@@ -23,19 +23,37 @@ const _innerHandler: Handler = async (event, _ctx) => {
     used: list.filter(i => i.status === 'used').length,
   };
 
-  // 形式小类分布
+  // 形式小类分布（多选：一条灵感可能同时属于 1-3 个小类，每个小类都 +1）
   const byCategory: Record<string, number> = {};
   for (const c of data.categories) byCategory[c.id] = 0;
+  byCategory['uncategorized'] = 0;
   for (const i of list) {
-    const key = i.subCategory || 'uncategorized';
-    byCategory[key] = (byCategory[key] || 0) + 1;
+    // 优先用 subCategories 数组；兼容老的 subCategory 单值
+    let cats: string[] = [];
+    if (Array.isArray(i.subCategories) && i.subCategories.length > 0) {
+      cats = i.subCategories;
+    } else if (i.subCategory) {
+      cats = [i.subCategory];
+    } else if (Array.isArray(i.aiSuggestion?.subCategories) && i.aiSuggestion.subCategories.length > 0) {
+      cats = i.aiSuggestion.subCategories;
+    } else if (i.aiSuggestion?.subCategory) {
+      cats = [i.aiSuggestion.subCategory];
+    }
+    if (cats.length === 0) {
+      byCategory['uncategorized'] += 1;
+    } else {
+      for (const c of cats) {
+        byCategory[c] = (byCategory[c] || 0) + 1;
+      }
+    }
   }
 
   // 展馆类型分布
   const byVenueType: Record<string, number> = {};
   for (const v of data.venueTypes) byVenueType[v.id] = 0;
+  byVenueType['unspecified'] = 0;
   for (const i of list) {
-    const key = i.venueType || 'unspecified';
+    const key = i.venueType || i.aiSuggestion?.venueType || 'unspecified';
     byVenueType[key] = (byVenueType[key] || 0) + 1;
   }
 
