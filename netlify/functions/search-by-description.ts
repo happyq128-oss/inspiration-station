@@ -80,28 +80,40 @@ const _innerHandler: Handler = async (event, _ctx) => {
         : null);
     }
 
-    // Step 3: 补算缺失的 embedding（一次批量调用）
+    // Step 3: 补算缺失的 embedding（限制当场算的数量，避免 Netlify 26s timeout）
+    // - 已有 embedding 的直接用
+    // - 缺失的最多当场算 MAX_COMPUTE 条（每条 1-2s，5 条约 10s 内可完成）
+    // - 超过的标记为"未参与搜索"，前端展示给用户
+    const MAX_COMPUTE = 5;
     const missingIdx: number[] = [];
     for (let k = 0; k < haveVec.length; k++) {
       if (!haveVec[k]) missingIdx.push(k);
     }
+    const skippedForSpeed = Math.max(0, missingIdx.length - MAX_COMPUTE);
+    const toCompute = missingIdx.slice(0, MAX_COMPUTE);
 
-    if (missingIdx.length > 0) {
-      const missingTexts = missingIdx.map(k => texts[k]);
-      console.log(`[find] computing ${missingIdx.length} missing embeddings...`);
-      const vectors = await embedBatch(missingTexts);
-      for (let m = 0; m < missingIdx.length; m++) {
-        haveVec[missingIdx[m]] = vectors[m];
+    if (toCompute.length > 0) {
+      console.log(`[find] computing ${toCompute.length} missing embeddings (skipped ${skippedForSpeed} for speed)...`);
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < toCompute.length; i += BATCH_SIZE) {
+        const batchIdx = toCompute.slice(i, i + BATCH_SIZE);
+        const batchTexts = batchIdx.map(k => texts[k]);
+        const vectors = await embedBatch(batchTexts);
+        for (let m = 0; m < batchIdx.length; m++) {
+          haveVec[batchIdx[m]] = vectors[m];
+        }
       }
     }
     console.log(`[find] all embedded: ${Date.now() - t0}ms`);
 
-    // Step 4: 算相似度
-    const scored = list.map((insp, idx) => {
+    // Step 4: 算相似度（只有有 embedding 的才能算）
+    const scored: { insp: Inspiration; similarity: number }[] = [];
+    for (let idx = 0; idx < list.length; idx++) {
       const v = haveVec[idx];
-      const sim = v ? cosineSimilarity(queryVec, v) : 0;
-      return { insp, similarity: sim };
-    });
+      if (!v) continue;  // 跳过没 embedding 的
+      const sim = cosineSimilarity(queryVec, v);
+      scored.push({ insp: list[idx], similarity: sim });
+    }
 
     // Step 5: 排序 + 截 topK
     scored.sort((a, b) => b.similarity - a.similarity);
@@ -118,7 +130,7 @@ const _innerHandler: Handler = async (event, _ctx) => {
       venueTypeName: insp.venueTypeName || insp.aiSuggestion?.venueTypeName || '',
       visualDescription: insp.visualDescription || insp.aiSuggestion?.visualDescription || '',
       visualTags: insp.visualTags || insp.aiSuggestion?.visualTags || [],
-      similarity: Math.round(similarity * 1000) / 1000,  // 保留 3 位小数
+      similarity: Math.round(similarity * 1000) / 1000,
     }));
 
     return jsonResponse({
@@ -126,7 +138,9 @@ const _innerHandler: Handler = async (event, _ctx) => {
       query,
       topK,
       totalCandidates: list.length,
-      computedNow: missingIdx.length,  // 这次现算的 embedding 数
+      candidatesWithEmbedding: haveVec.filter(Boolean).length,
+      candidatesWithoutEmbedding: haveVec.filter(v => !v).length,
+      skippedForSpeed,
       results,
       duration: Date.now() - t0,
     });
