@@ -784,4 +784,25 @@ a.tag-link:hover {
   .main { padding: 20px; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
   .cards-grid { grid-template-columns: 1fr; }
+
+  /* 移动端：让 hero 按钮不绝对定位，给标题和小字留空间
+     改成"标题/小字在上、按钮在下"两行流式布局 */
+  .hero {
+    position: static;
+    padding: 24px 20px 20px;
+  }
+  .hero-label { padding-right: 0; }
+  .hero-title { font-size: 24px; padding-right: 0; }
+  .hero-subtitle { padding-right: 0; }
+  .hero-add-btn {
+    position: static;
+    margin-top: 20px;
+    width: 100%;
+    height: 80px;
+    flex-direction: row;
+    border-radius: 16px;
+    gap: 12px;
+  }
+  .hero-add-icon { font-size: 32px; margin-bottom: 0; }
+  .hero-add-text { font-size: 16px; }
 }

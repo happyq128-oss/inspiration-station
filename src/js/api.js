@@ -185,6 +185,7 @@ const PLATFORM_LABEL = {
   douyin: '抖音',
   huaban: '花瓣',
   other: '其他',
+  unspecified: '未指定',
 };
 
 const STATUS_LABEL = {

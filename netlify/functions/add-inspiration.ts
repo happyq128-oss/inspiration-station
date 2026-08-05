@@ -48,6 +48,12 @@ const _innerHandler: Handler = async (event, context) => {
       }
     }
 
+    // 手动添加可以没 URL（仅靠截图）—— 但必须有 url 或 imageBase64 至少一个
+    // 留个口子：完全空数据直接拒绝
+    if (!url && !imageBase64) {
+      return errorResponse('需要至少提供链接或截图其中一项');
+    }
+
     // 去重
     if (url) {
       const existing = await findByUrl(url);
@@ -63,12 +69,17 @@ const _innerHandler: Handler = async (event, context) => {
 
     const id = generateId();
     const now = new Date().toISOString();
-    // platform 推断：有 url 走 detect；没 url 但走相簿自动化，默认小红书（最常见来源）
+    // platform 推断：
+    // - 有 URL 走 detectPlatform
+    // - 截图模式（iPhone shortcut / 相簿自动化）默认小红书（最常见来源）
+    // - 手动添加且无 URL：标"未指定"
     let platform: string = 'other';
     if (url) {
       platform = detectPlatform(url);
     } else if (source === 'album-automation' || source === 'shortcut') {
       platform = 'xiaohongshu';
+    } else if (source === 'manual' && !url) {
+      platform = 'unspecified';
     }
 
     // 1. 存截图

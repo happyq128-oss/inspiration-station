@@ -1,7 +1,7 @@
 // netlify/functions/lib/types.ts
 // 共享数据模型定义
 
-export type Platform = 'xiaohongshu' | 'douyin' | 'huaban' | 'other';
+export type Platform = 'xiaohongshu' | 'douyin' | 'huaban' | 'other' | 'unspecified';
 
 export type InspirationStatus = 'pending' | 'organized' | 'used';
 
@@ -162,6 +162,7 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   douyin: '抖音',
   huaban: '花瓣',
   other: '其他',
+  unspecified: '未指定',
 };
 
 export const STATUS_LABELS: Record<InspirationStatus, string> = {

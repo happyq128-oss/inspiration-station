@@ -17,7 +17,7 @@ function openAddModal() {
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label class="form-label">链接 URL <span style="color:red">*</span></label>
+            <label class="form-label">链接 URL <span class="text-mute" style="font-weight: normal;">（可选，有截图也可留空）</span></label>
             <input class="form-input" id="add-url" placeholder="https://www.xiaohongshu.com/explore/...">
           </div>
           <div class="form-group">
@@ -26,8 +26,7 @@ function openAddModal() {
           </div>
           <div class="form-group">
             <label class="form-label">
-              截图（推荐，AI 看图分类更准）
-              <span class="text-mute" style="font-weight: normal;">— 可拖拽到框里，或点选文件</span>
+              截图 <span class="text-mute" style="font-weight: normal;">（推荐，AI 看图分类更准）</span>
             </label>
             <div id="add-drop-zone" style="border: 2px dashed var(--color-border); border-radius: var(--radius); padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s; background: #fafafa;" onclick="document.getElementById('add-file').click()">
               <div id="add-preview-wrap">
@@ -122,11 +121,22 @@ async function submitAdd() {
   if (!urlInput) return; // 弹窗已关闭
   const url = (urlInput.value || '').trim();
   const title = (titleInput?.value || '').trim();
-  if (!url) { showToast('请输入链接'); urlInput.focus(); return; }
-  try {
-    new URL(url);
-  } catch {
-    showToast('链接格式不对'); urlInput.focus(); return;
+
+  // URL 可选——但有图没 URL 也能保存（来源标"未指定"）
+  // 没 URL 也没截图 → 拒绝
+  if (!url && !_addModalImageBase64) {
+    showToast('至少填一个链接或上传一张截图');
+    return;
+  }
+  // 有 URL 但格式不对 → 提示（也允许用户强行保存，按"未指定"处理）
+  if (url) {
+    try {
+      new URL(url);
+    } catch {
+      showToast('链接格式不对，请检查或留空');
+      urlInput.focus();
+      return;
+    }
   }
 
   if (saveBtn.disabled) return;
@@ -135,7 +145,8 @@ async function submitAdd() {
   saveBtn.textContent = _addModalImageBase64 ? '上传截图中...' : '保存中...';
 
   try {
-    const body = { url, title, source: 'manual' };
+    const body = { title, source: 'manual' };
+    if (url) body.url = url;
     if (_addModalImageBase64) body.imageBase64 = _addModalImageBase64;
 
     const res = await API.addInspiration(body);
