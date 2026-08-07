@@ -181,16 +181,17 @@
       renderVenues();
     }
 
-    // ============ 通用事件：input 触发 → 同步 state → 自动 debounce 保存 ============
-    // 关键修复：之前用户改完色/描述要手动点"保存所有修改"，但很多人忘了点。
-    // 现在改为：每次 input 改完 800ms 自动 POST，无需手动点保存。
+    // ============ 通用事件：change 触发（失焦/回车）→ 自动保存 ============
+    // 关键修复：之前用 input 事件 + 800ms debounce，但中文拼音输入法在选词时
+    // 会反复触发 input，导致用户输入未完成就被保存。改成 change 事件后，
+    // 必须失焦/回车才保存，输入过程中不再被打断。
     let _saveTimer = null;
     let _saveStatus = 'idle'; // 'idle' | 'pending' | 'saving' | 'saved' | 'error'
     function markModified() {
       _saveStatus = 'pending';
       renderSaveStatus();
       if (_saveTimer) clearTimeout(_saveTimer);
-      _saveTimer = setTimeout(() => saveAllNow(false), 800);
+      _saveTimer = setTimeout(() => saveAllNow(false), 500);
     }
     function renderSaveStatus() {
       const catEl = document.getElementById('cat-save-status');
@@ -217,20 +218,45 @@
       }
     }
 
+    // 1) input 事件：仅同步 state + 颜色实时同步 swatch（不触发保存）
+    //    中文拼音输入法选词时会反复触发 input，但只要不保存就不打断用户
     document.getElementById('app').addEventListener('input', e => {
       const t = e.target;
       const type = t.dataset.type;
       const idx = t.dataset.idx;
       const field = t.dataset.field;
       if (!type || idx === undefined) return;
+
+      // 同步到 state（保存由 change/blur 事件触发）
       const list = type === 'cat' ? categories : venueTypes;
       list[idx][field] = e.target.value;
-      // 颜色修改时：左侧色块实时同步
+
+      // 颜色 picker 实时同步 swatch（视觉反馈）
       if (field === 'color') {
         const swatch = t.parentElement.querySelector('span[data-role="swatch"]');
         if (swatch) swatch.style.background = e.target.value;
       }
+
+      // 标记"被编辑过"，供 blur 兜底
+      t._dirty = true;
+    });
+
+    // 2) change 事件：失焦/回车/选完选项时触发，避开 IME 选词干扰
+    document.getElementById('app').addEventListener('change', e => {
+      const t = e.target;
+      if (!t.dataset || !t.dataset.type) return;
+      t._dirty = false;
       markModified();
+    });
+
+    // 3) blur 兜底：input 里编辑后点别处可能 change 不触发
+    document.getElementById('app').addEventListener('focusout', e => {
+      const t = e.target;
+      if (!t.dataset || !t.dataset.type) return;
+      if (t._dirty) {
+        t._dirty = false;
+        markModified();
+      }
     });
 
     /** 立即保存（手动按钮调用，或 debounce 触发） */

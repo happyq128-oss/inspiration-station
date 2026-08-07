@@ -67,7 +67,7 @@ function getDataStore() {
   return getStoreOptions(STORE_NAME);
 }
 
-function getImageStore() {
+export function getImageStore() {
   return getStoreOptions(IMAGE_STORE_NAME);
 }
 
