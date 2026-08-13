@@ -21,6 +21,10 @@ function openAddModal() {
             <input class="form-input" id="add-url" placeholder="https://www.xiaohongshu.com/explore/...">
           </div>
           <div class="form-group">
+            <label class="form-label">硬盘路径 <span class="text-mute" style="font-weight: normal;">（Mac，可选 — 填了之后能在 Finder 中显示）</span></label>
+            <input class="form-input" id="add-local-path" placeholder="/Users/你的用户名/Documents/展陈灵感/某图.jpg" style="font-family: monospace; font-size: 13px;">
+          </div>
+          <div class="form-group">
             <label class="form-label">标题（可选）</label>
             <input class="form-input" id="add-title" placeholder="自动抓取或留空">
           </div>
@@ -117,9 +121,11 @@ function handleAddImageFile(file) {
 async function submitAdd() {
   const saveBtn = document.getElementById('add-save-btn');
   const urlInput = document.getElementById('add-url');
+  const localPathInput = document.getElementById('add-local-path');
   const titleInput = document.getElementById('add-title');
   if (!urlInput) return; // 弹窗已关闭
   const url = (urlInput.value || '').trim();
+  const localPath = (localPathInput?.value || '').trim();
   const title = (titleInput?.value || '').trim();
 
   // URL 可选——但有图没 URL 也能保存（来源标"未指定"）
@@ -147,6 +153,7 @@ async function submitAdd() {
   try {
     const body = { title, source: 'manual' };
     if (url) body.url = url;
+    if (localPath) body.localPath = localPath;
     if (_addModalImageBase64) body.imageBase64 = _addModalImageBase64;
 
     const res = await API.addInspiration(body);

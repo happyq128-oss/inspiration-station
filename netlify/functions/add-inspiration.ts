@@ -24,18 +24,21 @@ const _innerHandler: Handler = async (event, context) => {
     let providedTitle: string | undefined;
     let source = 'shortcut';
     let imageBase64: string | undefined;
+    let localPath: string | undefined;
 
     if (event.httpMethod === 'GET') {
       const params = event.queryStringParameters || {};
       url = params.url;
       providedTitle = params.title;
       source = params.source || 'shortcut';
+      localPath = params.localPath;
     } else {
       const body = JSON.parse(event.body || '{}');
       url = body.url;
       providedTitle = body.title;
       source = body.source || 'shortcut';
       imageBase64 = body.imageBase64;
+      localPath = body.localPath;
     }
 
     if (!url && !imageBase64) return errorResponse('Either url or imageBase64 is required');
@@ -112,6 +115,7 @@ const _innerHandler: Handler = async (event, context) => {
       platform,
       coverImage: coverImageUrl,
       coverThumbnail: coverThumbnailUrl,
+      localPath: localPath && localPath.trim() ? localPath.trim() : undefined,
       status: 'pending',
       createdAt: now,
       updatedAt: now,

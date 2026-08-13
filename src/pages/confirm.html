@@ -110,6 +110,7 @@
               ${venueId ? `<span class="tag" style="background: ${getCategoryColor(venueTypes, venueId)}22; color: ${getCategoryColor(venueTypes, venueId)};">${escapeHtml(insp.venueTypeName || '')}</span>` : ''}
               <span class="tag tag-status-${insp.status}">${STATUS_LABEL[insp.status] || insp.status}</span>
               <span class="tag tag-default">${PLATFORM_LABEL[insp.platform] || insp.platform || ''}</span>
+              ${insp.localPath ? renderConfirmLocalTag(insp.localPath) : ''}
               <span class="text-mute" style="font-size: 12px;">${formatDate(insp.createdAt)}</span>
             </div>
 
@@ -178,6 +179,18 @@
             <div class="form-group">
               <label class="form-label">备注</label>
               <textarea class="form-textarea" id="note-input" placeholder="写下你的想法、参考角度、适用场景等...">${escapeHtml(insp.userNote || '')}</textarea>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">
+                硬盘路径
+                <span class="text-mute" style="font-weight: normal;">— Mac 绝对路径，填了之后能在 Finder 中显示</span>
+              </label>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <input class="form-input" id="local-path-input" value="${escapeHtml(insp.localPath || '')}" placeholder="/Users/你的用户名/Documents/展陈灵感/某图.jpg" style="font-family: monospace; font-size: 13px; flex: 1;">
+                <button class="btn btn-cyan btn-sm" type="button" onclick="handleRevealLocal(document.getElementById('local-path-input').value)" title="在 Finder 中显示">📂 Finder</button>
+                <button class="btn btn-sm" type="button" onclick="navigator.clipboard.writeText(document.getElementById('local-path-input').value).then(() => showToast('已复制', 1500))" style="background: #f0f0f0;">📋 复制</button>
+              </div>
             </div>
 
             <div class="flex gap-2 mt-6">
@@ -307,6 +320,7 @@
       const status = document.querySelector('.status-btn.active')?.dataset.status || 'pending';
       const tags = (document.getElementById('tags-input').value || '').trim().split(/\s+/).filter(Boolean);
       const userNote = (document.getElementById('note-input').value || '').trim();
+      const localPath = (document.getElementById('local-path-input').value || '').trim();
 
       // 检测是否修改了 AI 建议（用于触发学习）
       const oldSubCats = insp.aiSuggestion?.subCategories || (insp.aiSuggestion?.subCategory ? [insp.aiSuggestion.subCategory] : []);
@@ -320,6 +334,7 @@
         status,
         tags,
         userNote,
+        localPath: localPath || undefined,
         subCategories: subCategories,
       };
 
@@ -384,6 +399,33 @@
         }
       } catch (e) {
         showToast('失败：' + (e.message || ''), 4000);
+      }
+    }
+
+    // 渲染 confirm 页的本地路径 tag + 一个独立的"编辑本地路径"行
+    function renderConfirmLocalTag(localPath) {
+      const safe = escapeHtml(localPath);
+      return `<a class="tag tag-default tag-link"
+                href="javascript:void(0)"
+                onclick="event.stopPropagation(); handleRevealLocal('${safe.replace(/'/g, "\\'")}')"
+                title="${safe}（点击在 Finder 中显示）"
+                style="font-size: 12px;">
+                💻 硬盘
+              </a>`;
+    }
+
+    async function handleRevealLocal(localPath) {
+      if (!localPath) return;
+      const r = await API.revealLocalPath(localPath);
+      if (r.ok) {
+        showToast('✓ 已在 Finder 中显示', 2000);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(localPath);
+        showToast('本地服务未启动，路径已复制到剪贴板', 3000);
+      } catch {
+        showToast('本地服务未启动，路径：' + localPath, 5000);
       }
     }
 

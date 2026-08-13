@@ -132,6 +132,52 @@ const API = {
     if (ids && ids.length > 0) body.ids = ids;
     return this.request('/api/backfill-visual-desc', { method: 'POST', body });
   },
+
+  // ===== 本地桥接（Mac Finder 打开）=====
+  // 检查 Mac 本地服务（localhost:8765）是否在线
+  // 5 秒超时，不在线返回 { ok: false, offline: true }
+  async checkLocalBridge() {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 1500);
+      const res = await fetch('http://localhost:8765/health', { signal: controller.signal });
+      clearTimeout(t);
+      if (!res.ok) return { ok: false, offline: true };
+      const data = await res.json();
+      return { ok: true, ...data };
+    } catch {
+      return { ok: false, offline: true };
+    }
+  },
+
+  // 在 Mac Finder 中显示指定路径
+  // - 先调 /token 拿 token（如果服务刚启动还没缓存）
+  // - 再调 /reveal?path=xxx
+  async revealLocalPath(localPath) {
+    if (!localPath) return { ok: false, error: '路径为空' };
+    // 1) 拿 token
+    let token;
+    try {
+      const tRes = await fetch('http://localhost:8765/token');
+      if (!tRes.ok) return { ok: false, error: '本地服务不可用' };
+      const tData = await tRes.json();
+      token = tData.token;
+    } catch {
+      return { ok: false, error: '本地服务离线' };
+    }
+    // 2) Reveal
+    const url = `http://localhost:8765/reveal?token=${encodeURIComponent(token)}&path=${encodeURIComponent(localPath)}`;
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(t);
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, ...data };
+    } catch (e) {
+      return { ok: false, error: '请求失败：' + (e.message || '未知') };
+    }
+  },
 };
 
 // 全局工具

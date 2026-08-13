@@ -107,6 +107,8 @@ export interface Inspiration {
   coverImage?: string;
   coverThumbnail?: string;  // 240px 缩略图 URL（Excel 嵌入用）
   description?: string;
+  // 本地硬盘路径（Mac）：填了之后可以在 Finder 中打开
+  localPath?: string;
   // 形式小类（多选）
   subCategories?: string[];
   subCategoryNames?: string[];

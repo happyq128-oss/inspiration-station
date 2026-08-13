@@ -422,6 +422,35 @@
       else showToast('没有待确认的灵感了');
     }
 
+    // 渲染本地路径标签：💻 硬盘 — 点击在 Finder 中显示（如果本地服务在线）
+    function renderLocalPathTag(localPath) {
+      const safe = escapeHtml(localPath);
+      return `<a class="tag tag-default tag-link local-path-tag"
+                href="javascript:void(0)"
+                onclick="event.stopPropagation(); handleRevealLocal('${safe.replace(/'/g, "\\'")}')"
+                title="本地路径：${safe}（点击在 Finder 中显示，未启动本地服务时复制路径）"
+                style="font-size: 12px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                💻 硬盘
+              </a>`;
+    }
+
+    async function handleRevealLocal(localPath) {
+      if (!localPath) return;
+      // 尝试调本地服务
+      const r = await API.revealLocalPath(localPath);
+      if (r.ok) {
+        showToast('✓ 已在 Finder 中显示', 2000);
+        return;
+      }
+      // 失败时降级：复制路径到剪贴板
+      try {
+        await navigator.clipboard.writeText(localPath);
+        showToast('本地服务未启动，路径已复制到剪贴板', 3000);
+      } catch {
+        showToast('本地服务未启动，路径：' + localPath, 5000);
+      }
+    }
+
     function renderInspirationCard(insp) {
       // 形式小类（多选）
       const catIds = insp.subCategories || (insp.aiSuggestion?.subCategories) || (insp.subCategory ? [insp.subCategory] : (insp.aiSuggestion?.subCategory ? [insp.aiSuggestion.subCategory] : []));
@@ -463,6 +492,7 @@
             </div>
             <div class="insp-meta" style="margin-top: 8px;">
               <a class="tag tag-default tag-link" href="${escapeHtml(insp.url || '#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="点击打开原帖">${PLATFORM_LABEL[insp.platform] || insp.platform || '其他'}</a>
+              ${insp.localPath ? renderLocalPathTag(insp.localPath) : ''}
               <span class="text-mute" style="font-size: 11px;">${formatDate(insp.createdAt)}</span>
             </div>
           </div>
@@ -506,6 +536,7 @@
           <div><span class="tag tag-status-${insp.status}">${STATUS_LABEL[insp.status]}</span></div>
           <div>
             <a class="tag tag-default tag-link" href="${escapeHtml(insp.url || '#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="点击打开原帖" style="font-size: 13px;">${PLATFORM_LABEL[insp.platform] || insp.platform || '其他'}</a>
+            ${insp.localPath ? renderLocalPathTag(insp.localPath) : ''}
           </div>
           <div class="text-soft" style="font-size: 12px;">${formatDate(insp.createdAt)}</div>
         </div>
