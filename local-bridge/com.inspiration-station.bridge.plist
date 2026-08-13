@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  灵感站本地桥接服务 LaunchAgent 配置
+  位置：~/Library/LaunchAgents/com.inspiration-station.bridge.plist
+  安装：双击 install.command
+  卸载：双击 uninstall.command
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.inspiration-station.bridge</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/env</string>
+        <string>python3</string>
+        <string>__SCRIPT_PATH__</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__SCRIPT_DIR__</string>
+
+    <!-- 开机自动启动 -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- 崩溃后自动重启（最多 10 秒重试） -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>ThrottleInterval</key>
+        <integer>10</integer>
+    </dict>
+
+    <!-- 日志（出问题时排查用） -->
+    <key>StandardOutPath</key>
+    <string>__LOG_DIR__/inspiration-bridge.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG_DIR__/inspiration-bridge.err.log</string>
+
+    <!-- macOS 13+ 的进程类型（避免被系统休眠杀掉） -->
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
