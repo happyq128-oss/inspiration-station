@@ -15,7 +15,7 @@ const ALLOWED_FIELDS = [
   'venueType', 'venueTypeName',
   'status', 'userNote', 'tags', 'description',
   'visualDescription', 'visualTags', 'visualEmbedding',
-  'localPath',
+  'localPath', 'url',
 ];
 
 const _innerHandler: Handler = async (event, _ctx) => {
