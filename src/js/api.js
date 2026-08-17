@@ -133,6 +133,15 @@ const API = {
     return this.request('/api/backfill-visual-desc', { method: 'POST', body });
   },
 
+  // ===== "帮你找"反馈 =====
+  // 记录用户选了哪张图（个性化 rerank 用）
+  recordFeedback({ query, pickedInspId }) {
+    return this.request('/api/feedback', {
+      method: 'POST',
+      body: { query, pickedInspId },
+    });
+  },
+
   // ===== 本地桥接（Mac Finder 打开）=====
   // 检查 Mac 本地服务（localhost:8765）是否在线
   // 5 秒超时，不在线返回 { ok: false, offline: true }

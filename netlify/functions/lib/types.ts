@@ -138,16 +138,29 @@ export interface DataStore {
   inspirations: Record<string, Inspiration>;
   categories: SubCategory[];        // 形式小类
   venueTypes: VenueType[];          // 展馆类型
+  userFeedbacks?: UserFeedback[];   // "帮你找"的用户偏好记录（rerank 用）
   settings: {
     lastBackupAt?: string;
     backupEmail?: string;
   };
 }
 
+// "帮你找"的用户偏好记录——每次用户在结果页选了某张图，记一条
+// 搜时用 queryEmbedding 跟新 query 算 cosine，相似度高的图提到前面
+export interface UserFeedback {
+  id: string;
+  query: string;                  // 用户的搜索描述
+  queryEmbedding?: number[];      // query 的 embedding（1024 维，可选：老数据没存也能用）
+  pickedInspId: string;           // 选中的灵感 ID
+  pickedTitle?: string;           // 选中的图标题（冗余，方便显示）
+  createdAt: string;              // ISO 时间
+}
+
 export const DEFAULT_DATA: DataStore = {
   inspirations: {},
   categories: DEFAULT_CATEGORIES,
   venueTypes: DEFAULT_VENUE_TYPES,
+  userFeedbacks: [],
   settings: {},
 };
 

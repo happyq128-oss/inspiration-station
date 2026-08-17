@@ -452,9 +452,41 @@
               ${venueName ? `<span>${escapeHtml(venueName)}</span> · ` : ''}
               <a class="find-card-link" href="${escapeHtml(r.url || '#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()">查看原帖</a>
             </div>
+            <button class="btn btn-sm feedback-btn" type="button"
+                    onclick="event.stopPropagation(); handleFeedback('${escapeHtml(r.id).replace(/'/g, "\\'")}')"
+                    style="margin-top: 8px; background: #FFF3E0; color: #E65100; font-weight: 600; width: 100%; padding: 8px;">
+              ✓ 就用这张（让 AI 记住）
+            </button>
           </div>
         </div>
       `;
+    }
+
+    // 用户点"✓ 就用这张"——记录偏好给 AI 学习
+    async function handleFeedback(inspId) {
+      const query = state.lastQuery;
+      if (!query) {
+        showToast('❌ 没有 query');
+        return;
+      }
+      try {
+        await API.recordFeedback({ query, pickedInspId: inspId });
+        // 视觉反馈
+        const btns = document.querySelectorAll('.feedback-btn');
+        btns.forEach(b => {
+          if (b.getAttribute('onclick')?.includes(inspId)) {
+            b.textContent = '✓ AI 已记住';
+            b.style.background = '#10B981';
+            b.style.color = 'white';
+            b.disabled = true;
+          } else {
+            b.style.opacity = '0.5';
+          }
+        });
+        showToast('✓ AI 已记住——下次类似描述会优先推这张', 2500);
+      } catch (e) {
+        showToast('❌ 失败：' + (e.message || '网络错误'), 4000);
+      }
     }
   </script>
 </body>

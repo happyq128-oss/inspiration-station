@@ -128,6 +128,7 @@ export async function loadData(): Promise<DataStore> {
       inspirations: data.inspirations || {},
       categories: mergedCategories,
       venueTypes: mergedVenueTypes,
+      userFeedbacks: data.userFeedbacks || [],
       settings: data.settings || {},
     };
   } catch (e) {

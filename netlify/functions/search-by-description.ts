@@ -117,7 +117,75 @@ const _innerHandler: Handler = async (event, _ctx) => {
 
     // Step 5: 排序 + 截 topK
     scored.sort((a, b) => b.similarity - a.similarity);
-    const top = scored.slice(0, topK);
+    let top = scored.slice(0, topK);
+
+    // ========== Step 5.5: 个性化重排序（基于用户历史偏好）==========
+    // 逻辑：对最近 20 条 userFeedbacks，算 current_query vs feedback_query 的 cosine
+    //       相似度 > 0.5 的：把对应 pickedInspId 提到 Top 3
+    //       标记 personalizedFromFeedback 字段让前端展示
+    const feedbacks = (data.userFeedbacks || [])
+      .filter(f => Array.isArray(f.queryEmbedding) && f.queryEmbedding.length === EMBEDDING_DIM)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 20);
+
+    const personalizedFromFeedback: { feedbackId: string; query: string; matchScore: number }[] = [];
+    if (feedbacks.length > 0) {
+      // 对每条 feedback 算相似度
+      const feedbackMatches: { feedback: any; score: number; topIdx: number }[] = [];
+      for (const fb of feedbacks) {
+        const fbSim = cosineSimilarity(queryVec, fb.queryEmbedding!);
+        // DEBUG
+        console.log(`[find-rerank] feedback query="${fb.query.slice(0, 30)}" sim=${fbSim.toFixed(3)} picked=${fb.pickedInspId}`);
+        if (fbSim > 0.4) {  // 0.4 是 Qwen embedding 的"明显相关"阈值
+          // 找到这条 feedback 对应的图在 top 里的位置
+          const topIdx = top.findIndex(t => t.insp.id === fb.pickedInspId);
+          feedbackMatches.push({ feedback: fb, score: fbSim, topIdx });
+        }
+      }
+
+      // 按 match score 降序，对每条匹配：把对应图提到 Top 3
+      // （如果已经在 top 3 内就只标记；如果在 top 4-12 里就移到 top 3；如果不在 top 12 也加进来）
+      feedbackMatches.sort((a, b) => b.score - a.score);
+      for (const m of feedbackMatches) {
+        if (m.topIdx >= 0 && m.topIdx < 3) {
+          // 已经在 top 3：只标记
+          personalizedFromFeedback.push({
+            inspId: m.feedback.pickedInspId,
+            feedbackId: m.feedback.id,
+            query: m.feedback.query,
+            matchScore: Math.round(m.score * 1000) / 1000,
+            moved: false,
+          });
+          continue;
+        }
+        if (m.topIdx >= 3 && m.topIdx < top.length) {
+          // 在 top 4+ 里：移到 top 3
+          const [item] = top.splice(m.topIdx, 1);
+          top.splice(2, 0, item);  // 插到 index 2（top 3 末尾）
+          personalizedFromFeedback.push({
+            inspId: m.feedback.pickedInspId,
+            feedbackId: m.feedback.id,
+            query: m.feedback.query,
+            matchScore: Math.round(m.score * 1000) / 1000,
+            moved: true,
+          });
+        } else {
+          // 不在 top 列表里：从 scored 找出来，插到 top 3
+          const fullItem = scored.find(s => s.insp.id === m.feedback.pickedInspId);
+          if (fullItem) {
+            top.splice(2, 0, fullItem);  // 插到 top 3
+            personalizedFromFeedback.push({
+              inspId: m.feedback.pickedInspId,
+              feedbackId: m.feedback.id,
+              query: m.feedback.query,
+              matchScore: Math.round(m.score * 1000) / 1000,
+              moved: true,
+            });
+          }
+        }
+      }
+    }
+    // ========== 个性化重排序结束 ==========
 
     // Step 6: 返回
     const results = top.map(({ insp, similarity }) => ({
@@ -141,6 +209,8 @@ const _innerHandler: Handler = async (event, _ctx) => {
       candidatesWithEmbedding: haveVec.filter(Boolean).length,
       candidatesWithoutEmbedding: haveVec.filter(v => !v).length,
       skippedForSpeed,
+      personalizedCount: personalizedFromFeedback.length,
+      personalizedDetails: personalizedFromFeedback,
       results,
       duration: Date.now() - t0,
     });
