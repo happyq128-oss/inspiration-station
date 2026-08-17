@@ -9,6 +9,7 @@
 let _addModalImageBase64 = null;
 let _currentAddTab = 'url';  // 'url' | 'local'
 let _localFilesInProgress = 0;  // 硬盘 tab 选中的文件数
+let _bridgeTokenCache = null;  // 缓存 local-bridge token
 
 /** 打开"新灵感来啦"弹窗 */
 function openAddModal(defaultTab = 'url') {
@@ -179,11 +180,17 @@ async function pickFromFinder() {
   btn.textContent = '⏳ 弹窗中...';
 
   try {
-    // 调本地服务弹 Finder 文件选择器
+    // 1) 拿 token
+    const token = await getBridgeToken();
+    if (!token) {
+      throw new Error('无法从 local-bridge 拿到 token（服务可能离线）');
+    }
+
+    // 2) 调本地服务弹 Finder 文件选择器
     const res = await fetch('http://localhost:8765/pick-files', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'image' }),
+      headers: { 'Content-Type': 'application/json', 'X-Bridge-Token': token },
+      body: JSON.stringify({ type: 'image', multiple: true, token }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -208,11 +215,11 @@ async function pickFromFinder() {
       status.textContent = `处理中 (${i + 1}/${data.files.length})：${file.name}`;
 
       try {
-        // 调本地服务读图 base64
+        // 3) 调本地服务读图 base64
         const readRes = await fetch('http://localhost:8765/read-file', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: file.path }),
+          headers: { 'Content-Type': 'application/json', 'X-Bridge-Token': token },
+          body: JSON.stringify({ path: file.path, token }),
         });
         if (!readRes.ok) {
           console.warn(`read-file failed: ${file.path}`);
@@ -221,7 +228,7 @@ async function pickFromFinder() {
         const readData = await readRes.json();
         if (!readData.base64) continue;
 
-        // 上传到 Netlify 入库
+        // 4) 上传到 Netlify 入库
         const uploadRes = await fetch('/api/index-local-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Auth-Token': API.getToken() },
@@ -264,10 +271,23 @@ async function pickFromFinder() {
     btn.disabled = false;
     btn.textContent = '📂 从 Finder 选图';
     showToast('❌ ' + (e.message || '本地服务不可用'), 5000);
-    // 检测是不是 local-bridge 离线
-    if (e.message && e.message.includes('fetch')) {
+    if (e.message && (e.message.includes('fetch') || e.message.includes('Failed'))) {
       showToast('💡 local-bridge 服务离线？试试双击 local-bridge/status.command 检查', 6000);
     }
+  }
+}
+
+/** 拿 local-bridge token（缓存避免重复请求） */
+async function getBridgeToken() {
+  if (_bridgeTokenCache) return _bridgeTokenCache;
+  try {
+    const res = await fetch('http://localhost:8765/token');
+    if (!res.ok) return null;
+    const data = await res.json();
+    _bridgeTokenCache = data.token;
+    return _bridgeTokenCache;
+  } catch {
+    return null;
   }
 }
 
