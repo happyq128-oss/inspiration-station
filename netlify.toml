@@ -91,6 +91,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/index-local-image"
+  to = "/.netlify/functions/index-local-image"
+  status = 200
+
+[[redirects]]
   from = "/api/health"
   to = "/.netlify/functions/health-check"
   status = 200

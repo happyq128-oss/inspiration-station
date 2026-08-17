@@ -24,6 +24,7 @@ import sys
 import json
 import secrets
 import urllib.parse
+import base64
 from pathlib import Path
 
 PORT = 8765
@@ -120,6 +121,167 @@ class BridgeHandler(http.server.BaseHTTPRequestHandler):
             return self._send_json(200, {'token': get_or_create_token()})
 
         return self._send_json(404, {'error': 'not found'})
+
+    def do_POST(self):
+        """处理 POST 请求：/pick-files（弹 Finder 选图）和 /read-file（读图 base64）"""
+        parsed = urllib.parse.urlparse(self.path)
+
+        # 读 body
+        content_length = int(self.headers.get('Content-Length', 0))
+        body = b''
+        if content_length > 0:
+            body = self.rfile.read(content_length)
+        try:
+            data = json.loads(body) if body else {}
+        except Exception:
+            data = {}
+
+        # 所有 POST 都要校验 token
+        provided_token = (
+            data.get('token')
+            or self.headers.get('X-Bridge-Token')
+        )
+        expected = get_or_create_token()
+        if provided_token != expected:
+            log(f"AUTH FAIL (POST): provided={provided_token[:8] if provided_token else 'None'}...")
+            return self._send_json(401, {'error': 'unauthorized'})
+
+        if parsed.path == '/pick-files':
+            return self._handle_pick_files(data)
+        elif parsed.path == '/read-file':
+            return self._handle_read_file(data)
+
+        return self._send_json(404, {'error': 'not found'})
+
+    def _handle_pick_files(self, data):
+        """弹 mac Finder 文件选择器，让用户选图，返回路径列表"""
+        allow_multiple = data.get('multiple', True)  # 默认允许多选
+        file_type = data.get('type', 'image')
+
+        # AppleScript：根据 file_type 选不同的 type
+        if file_type == 'image':
+            # public.image 覆盖 jpg/png/heic 等
+            as_type = 'public.image'
+        else:
+            as_type = ''  # 不限类型
+
+        # 多选 / 单选
+        if allow_multiple:
+            multi_clause = 'with multiple selections allowed'
+        else:
+            multi_clause = ''
+
+        ascript = f'''
+        set theFiles to choose file with prompt "选择要索引的图片" of type {{"{as_type}"}} {multi_clause}
+        set thePaths to {{}}
+        repeat with f in theFiles
+            set end of thePaths to POSIX path of f
+        end repeat
+        return thePaths
+        '''
+
+        try:
+            log(f"EXEC osascript pick-files (multiple={allow_multiple})")
+            result = subprocess.run(
+                ['osascript', '-e', ascript],
+                capture_output=True,
+                text=True,
+                timeout=120,  # 用户可能在 Finder 里慢慢选
+            )
+            if result.returncode != 0:
+                # 用户取消（User canceled.）也算非 0
+                if 'User canceled' in result.stderr or 'User cancelled' in result.stderr:
+                    log("User cancelled Finder picker")
+                    return self._send_json(200, {'files': [], 'cancelled': True})
+                log(f"osascript error: {result.stderr}")
+                return self._send_json(500, {'error': result.stderr.strip() or 'osascript failed'})
+
+            # 解析返回：AppleScript list → Python list
+            # 返回格式：path1, path2, path3（用逗号分隔，但路径里可能含逗号...）
+            # 用更安全的方式：each line is a path
+            raw = result.stdout.strip()
+            if not raw:
+                return self._send_json(200, {'files': [], 'cancelled': True})
+
+            # AppleScript 列表返回值：{path1, path2, ...}（有花括号）
+            # 提取每条路径
+            paths = []
+            # 去掉外层花括号
+            inner = raw.strip('{}').strip()
+            # 按 ", " 分割（AppleScript 用 ", " 分隔 list 项）
+            for line in inner.split(', '):
+                p = line.strip().strip('"').strip()
+                if p and os.path.exists(p):
+                    paths.append(p)
+                elif p:
+                    log(f"Path doesn't exist: {p}")
+
+            # 为每条路径计算父目录信息
+            files_info = []
+            for p in paths:
+                parent = os.path.dirname(p)
+                parent_name = os.path.basename(parent)
+                grandparent = os.path.dirname(parent)
+                grandparent_name = os.path.basename(grandparent)
+                files_info.append({
+                    'path': p,
+                    'name': os.path.basename(p),
+                    'parentDir': parent_name,
+                    'grandparentDir': grandparent_name,
+                })
+
+            log(f"Picker returned {len(files_info)} files")
+            return self._send_json(200, {'files': files_info})
+
+        except subprocess.TimeoutExpired:
+            return self._send_json(500, {'error': 'Finder 选择超时'})
+        except Exception as e:
+            log(f"pick-files error: {e}")
+            return self._send_json(500, {'error': str(e)})
+
+    def _handle_read_file(self, data):
+        """读图文件，返回 base64（让 Netlify 入库时用）"""
+        path = data.get('path', '').strip()
+        if not path:
+            return self._send_json(400, {'error': 'missing path'})
+        path = urllib.parse.unquote(path)
+
+        if not is_safe_path(path):
+            return self._send_json(400, {'error': 'invalid path'})
+
+        if not os.path.exists(path):
+            return self._send_json(404, {'error': f'file not found: {path}'})
+
+        # 限制大小：单文件 50MB（Netlify 6MB 限制，所以实际应该 <= 5MB）
+        try:
+            file_size = os.path.getsize(path)
+            if file_size > 50 * 1024 * 1024:
+                return self._send_json(400, {'error': f'文件太大 ({file_size//1024//1024}MB)，超过 50MB 限制'})
+
+            with open(path, 'rb') as f:
+                raw = f.read()
+            b64 = base64.b64encode(raw).decode('utf-8')
+
+            # 推断 mime type
+            ext = os.path.splitext(path)[1].lower()
+            mime_map = {
+                '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.heic': 'image/heic', '.heif': 'image/heif',
+                '.webp': 'image/webp',
+                '.gif': 'image/gif',
+            }
+            mime = mime_map.get(ext, 'application/octet-stream')
+
+            log(f"read-file {path}: {file_size}B -> base64")
+            return self._send_json(200, {
+                'base64': b64,
+                'mime': mime,
+                'size': file_size,
+            })
+        except Exception as e:
+            log(f"read-file error: {e}")
+            return self._send_json(500, {'error': str(e)})
 
     def _handle_reveal_or_open(self, action, params):
         # 校验 token
