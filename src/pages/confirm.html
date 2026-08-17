@@ -112,7 +112,10 @@
               ${venueId ? `<span class="tag" style="background: ${getCategoryColor(venueTypes, venueId)}22; color: ${getCategoryColor(venueTypes, venueId)};">${escapeHtml(insp.venueTypeName || '')}</span>` : ''}
               <span class="tag tag-status-${insp.status}">${STATUS_LABEL[insp.status] || insp.status}</span>
               ${(() => {
+                // 硬盘图不显示 platform（没平台概念）
+                if (insp.localPath || insp.source === 'local') return '';
                 const platformLabel = PLATFORM_LABEL[insp.platform] || insp.platform || '';
+                if (!platformLabel) return '';
                 const hasUrl = insp.url && insp.url.startsWith('http');
                 if (hasUrl) {
                   return `<a class="tag tag-default tag-link" href="${escapeHtml(insp.url)}" target="_blank" rel="noopener" title="打开原帖">${escapeHtml(platformLabel)}</a>`;

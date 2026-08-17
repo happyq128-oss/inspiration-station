@@ -499,12 +499,14 @@
             </div>
             <div class="insp-meta" style="margin-top: 8px;">
               ${(() => {
-                const platformLabel = PLATFORM_LABEL[insp.platform] || insp.platform || '其他';
+                // 硬盘图不显示 platform（没平台概念）
+                if (insp.localPath || insp.source === 'local') return '';
+                const platformLabel = PLATFORM_LABEL[insp.platform] || insp.platform || '';
                 const hasUrl = insp.url && insp.url.startsWith('http');
                 if (hasUrl) {
                   return `<a class="tag tag-default tag-link" href="${escapeHtml(insp.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="打开原帖">${escapeHtml(platformLabel)}</a>`;
                 }
-                return `<span class="tag tag-default">${escapeHtml(platformLabel)}</span>`;
+                return platformLabel ? `<span class="tag tag-default">${escapeHtml(platformLabel)}</span>` : '';
               })()}
               ${insp.localPath ? renderLocalPathTag(insp.localPath) : ''}
               <span class="text-mute" style="font-size: 11px;">${formatDate(insp.createdAt)}</span>
@@ -648,12 +650,16 @@
           <div><span class="tag tag-status-${insp.status}">${STATUS_LABEL[insp.status]}</span></div>
           <div>
             ${(() => {
-              const platformLabel = PLATFORM_LABEL[insp.platform] || insp.platform || '其他';
+              // 硬盘图不显示 platform
+              if (insp.localPath || insp.source === 'local') {
+                return insp.localPath ? renderLocalPathTag(insp.localPath) : '';
+              }
+              const platformLabel = PLATFORM_LABEL[insp.platform] || insp.platform || '';
               const hasUrl = insp.url && insp.url.startsWith('http');
               if (hasUrl) {
                 return `<a class="tag tag-default tag-link" href="${escapeHtml(insp.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="打开原帖" style="font-size: 13px;">${escapeHtml(platformLabel)}</a>`;
               }
-              return `<span class="tag tag-default" style="font-size: 13px;">${escapeHtml(platformLabel)}</span>`;
+              return platformLabel ? `<span class="tag tag-default" style="font-size: 13px;">${escapeHtml(platformLabel)}</span>` : '';
             })()}
             ${insp.localPath ? renderLocalPathTag(insp.localPath) : ''}
           </div>
