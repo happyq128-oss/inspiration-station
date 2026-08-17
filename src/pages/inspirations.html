@@ -43,7 +43,7 @@
           </div>
           <div class="flex gap-2">
             <button class="btn btn-cyan" onclick="exportExcel()">📊 导出 Excel</button>
-            <button class="btn" onclick="openAddModal()" style="background: linear-gradient(135deg, #FFD93D 0%, #FF9F40 100%); color: #1a1a1a; font-weight: 700;">✨ 新灵感来啦</button>
+            <button class="btn btn-yellow" onclick="openAddModal()">+ 新灵感来啦</button>
           </div>
         </div>
 
@@ -484,6 +484,13 @@
           ${cover}
           <div class="insp-body">
             <div class="insp-title" data-title="${escapeHtml(insp.title || '无标题')}" onclick="startEditTitle('${insp.id}', this, event, onTitleSaved)" title="点击修改标题">${escapeHtml(insp.title || '无标题')}</div>
+            <div class="insp-myidea" data-myidea="${escapeHtml(buildMyIdea(insp))}" onclick="startEditMyIdea('${insp.id}', this, event, onMyIdeaSaved)" title="点击记录你的想法（My idea）" style="font-size: 12px; color: #666; margin-top: 4px; line-height: 1.5; cursor: text; min-height: 18px;">
+              ${(() => {
+                const mi = buildMyIdea(insp);
+                if (!mi) return '<span style="color: #bbb;">+ My idea</span>';
+                return '💡 ' + escapeHtml(mi.length > 80 ? mi.slice(0, 80) + '...' : mi);
+              })()}
+            </div>
             <div class="insp-meta">
               ${catTags || '<span class="tag tag-default">待分类</span>'}
               ${venueName ? `<span class="tag" style="background: ${venueColor}22; color: ${venueColor};">${escapeHtml(venueName)}</span>` : ''}
@@ -491,13 +498,112 @@
               ${confTag}
             </div>
             <div class="insp-meta" style="margin-top: 8px;">
-              <a class="tag tag-default tag-link" href="${escapeHtml(insp.url || '#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="点击打开原帖">${PLATFORM_LABEL[insp.platform] || insp.platform || '其他'}</a>
+              ${(() => {
+                const platformLabel = PLATFORM_LABEL[insp.platform] || insp.platform || '其他';
+                const hasUrl = insp.url && insp.url.startsWith('http');
+                if (hasUrl) {
+                  return `<a class="tag tag-default tag-link" href="${escapeHtml(insp.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="打开原帖">${escapeHtml(platformLabel)}</a>`;
+                }
+                return `<span class="tag tag-default">${escapeHtml(platformLabel)}</span>`;
+              })()}
               ${insp.localPath ? renderLocalPathTag(insp.localPath) : ''}
               <span class="text-mute" style="font-size: 11px;">${formatDate(insp.createdAt)}</span>
             </div>
           </div>
         </div>
       `;
+    }
+
+    // 构造 My idea 字符串：tags + 换行 + userNote
+    function buildMyIdea(insp) {
+      const tags = (insp.tags || []).join(' ');
+      const note = insp.userNote || '';
+      return [tags, note].filter(Boolean).join('\n').trim();
+    }
+
+    // My idea 标题保存后回调
+    function onMyIdeaSaved(id, newText) {
+      const insp = state.inspirations.find(i => i.id === id);
+      if (!insp) return;
+      const lines = newText.split('\n');
+      const tags = lines[0].trim().split(/\s+/).filter(Boolean);
+      const userNote = lines.slice(1).join('\n').trim();
+      insp.tags = tags;
+      insp.userNote = userNote;
+    }
+
+    // 点击 My idea 行就地编辑
+    async function startEditMyIdea(id, el, e, onSaved) {
+      if (e) { e.stopPropagation(); e.preventDefault(); }
+      if (el.getAttribute('contenteditable') === 'true') return;
+      const originalHtml = el.innerHTML;
+      const current = (el.dataset.myidea || el.textContent || '').trim();
+      el.setAttribute('contenteditable', 'true');
+      el.textContent = current;
+      el.style.background = '#fffbf0';
+      el.style.borderRadius = '6px';
+      el.style.padding = '4px 6px';
+      el.style.outline = '1px solid #FFD93D';
+
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+
+      let finished = false;
+      const restore = () => {
+        el.removeAttribute('contenteditable');
+        el.style.background = '';
+        el.style.borderRadius = '';
+        el.style.padding = '';
+        el.style.outline = '';
+        el.innerHTML = originalHtml;
+      };
+      const save = async () => {
+        if (finished) return;
+        finished = true;
+        const newText = (el.textContent || '').trim();
+        el.removeAttribute('contenteditable');
+        el.style.background = '';
+        el.style.borderRadius = '';
+        el.style.padding = '';
+        el.style.outline = '';
+        if (newText === current) { el.innerHTML = originalHtml; return; }
+        try {
+          // 拆 tags + userNote
+          const lines = newText.split('\n');
+          const tags = lines[0].trim().split(/\s+/).filter(Boolean);
+          const userNote = lines.slice(1).join('\n').trim();
+          const res = await API.updateInspiration(id, { tags, userNote });
+          if (res.success) {
+            el.dataset.myidea = newText;
+            const insp = state.inspirations.find(i => i.id === id);
+            if (insp) { insp.tags = tags; insp.userNote = userNote; }
+            if (typeof onSaved === 'function') onSaved(id, newText);
+            const displayText = newText.length > 80 ? newText.slice(0, 80) + '...' : newText;
+            el.innerHTML = newText ? '💡 ' + escapeHtml(displayText) : '<span style="color: #bbb;">+ My idea</span>';
+          } else {
+            showToast('保存失败：' + (res.error || ''), 3000);
+            el.innerHTML = originalHtml;
+          }
+        } catch (err) {
+          showToast('保存失败：' + (err.message || '网络错误'), 3000);
+          el.innerHTML = originalHtml;
+        }
+      };
+      const cancel = () => { if (finished) return; finished = true; restore(); };
+      el.addEventListener('blur', () => setTimeout(save, 100), { once: true });
+      el.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();
+        if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
+          ev.preventDefault();
+          el.blur();
+        } else if (ev.key === 'Escape') {
+          ev.preventDefault();
+          cancel();
+        }
+      });
     }
 
     /** 标题更新后回调：同步到 state */
@@ -527,7 +633,13 @@
           </div>
           <div>
             <div class="insp-title" data-title="${escapeHtml(insp.title || '无标题')}" style="font-size: 14px;" onclick="startEditTitle('${insp.id}', this, event, onTitleSaved)" title="点击修改标题">${escapeHtml(insp.title || '无标题')}</div>
-            ${insp.userNote ? `<div class="text-soft" style="font-size: 12px; margin-top: 2px;">📝 ${escapeHtml(insp.userNote.slice(0, 50))}</div>` : ''}
+            <div class="insp-myidea" data-myidea="${escapeHtml(buildMyIdea(insp))}" onclick="startEditMyIdea('${insp.id}', this, event, onMyIdeaSaved)" title="点击记录你的想法（My idea）" style="font-size: 11px; color: #888; margin-top: 2px; line-height: 1.4; cursor: text;">
+              ${(() => {
+                const mi = buildMyIdea(insp);
+                if (!mi) return '<span style="color: #ccc;">+ My idea</span>';
+                return '💡 ' + escapeHtml(mi.length > 60 ? mi.slice(0, 60) + '...' : mi);
+              })()}
+            </div>
           </div>
           <div>
             <span class="tag" style="background: ${catColor}22; color: ${catColor};">${escapeHtml(catName)}</span>
@@ -535,7 +647,14 @@
           </div>
           <div><span class="tag tag-status-${insp.status}">${STATUS_LABEL[insp.status]}</span></div>
           <div>
-            <a class="tag tag-default tag-link" href="${escapeHtml(insp.url || '#')}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="点击打开原帖" style="font-size: 13px;">${PLATFORM_LABEL[insp.platform] || insp.platform || '其他'}</a>
+            ${(() => {
+              const platformLabel = PLATFORM_LABEL[insp.platform] || insp.platform || '其他';
+              const hasUrl = insp.url && insp.url.startsWith('http');
+              if (hasUrl) {
+                return `<a class="tag tag-default tag-link" href="${escapeHtml(insp.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="打开原帖" style="font-size: 13px;">${escapeHtml(platformLabel)}</a>`;
+              }
+              return `<span class="tag tag-default" style="font-size: 13px;">${escapeHtml(platformLabel)}</span>`;
+            })()}
             ${insp.localPath ? renderLocalPathTag(insp.localPath) : ''}
           </div>
           <div class="text-soft" style="font-size: 12px;">${formatDate(insp.createdAt)}</div>
