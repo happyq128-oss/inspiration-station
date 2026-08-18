@@ -62,7 +62,7 @@
             <div style="font-weight: 600; color: #00695C; font-size: 15px;">🤖 <span id="review-count">0</span> 条灵感 AI 已建议，等你确认</div>
             <div style="font-size: 12px; color: #004D40; margin-top: 4px;">AI 已经给过分类了，进来确认或改一下就变"已整理"</div>
           </div>
-          <button class="btn" style="background: #4ECDC4; color: white; font-weight: 600;" onclick="goToFirstReview()">逐条去确认 →</button>
+          <button class="btn" style="background: #4ECDC4; color: white; font-weight: 600;" onclick="goToBatchReview()">批量确认 (4 条/批) →</button>
         </div>
 
         <!-- AI 误标修复工具栏（只有存在 AI 误标时才显示） -->
@@ -413,13 +413,16 @@
       }
     }
 
-    // 跳到"待你确认"列表的第一条
-    function goToFirstReview() {
-      const first = state.inspirations.find(i =>
+    // 跳到批量确认页
+    function goToBatchReview() {
+      const pending = state.inspirations.filter(i =>
         i.status === 'pending' && i.aiSuggestion && (i.aiSuggestion.confidence || 0) > 0
       );
-      if (first) location.href = '/confirm?id=' + first.id;
-      else showToast('没有待确认的灵感了');
+      if (pending.length === 0) {
+        showToast('没有待确认的灵感了');
+        return;
+      }
+      location.href = '/confirm-batch';
     }
 
     // 渲染本地路径标签：💻 硬盘 — 点击在 Finder 中显示（如果本地服务在线）

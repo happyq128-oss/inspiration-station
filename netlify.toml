@@ -101,6 +101,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/batch-confirm"
+  to = "/.netlify/functions/batch-confirm"
+  status = 200
+
+[[redirects]]
   from = "/api/health"
   to = "/.netlify/functions/health-check"
   status = 200
@@ -130,6 +135,11 @@
 [[redirects]]
   from = "/confirm"
   to = "/pages/confirm.html"
+  status = 200
+
+[[redirects]]
+  from = "/confirm-batch"
+  to = "/pages/confirm-batch.html"
   status = 200
 
 [[redirects]]

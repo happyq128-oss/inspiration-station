@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>批量确认 · 灵感站</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .batch-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+    @media (max-width: 1100px) {
+      .batch-grid { grid-template-columns: 1fr; }
+    }
+    .batch-card {
+      background: white;
+      border: 1px solid #e5e5e5;
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .batch-card.hovering { border-color: var(--color-cyan); box-shadow: 0 4px 16px rgba(78, 205, 196, 0.15); }
+    .batch-card.saved { background: #f0fdf4; border-color: #10B981; }
+
+    .batch-cover-wrap {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #f5f5f5;
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .batch-cover-wrap img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+    .batch-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #222;
+      line-height: 1.4;
+    }
+    .batch-ai-confidence {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      color: white;
+      background: linear-gradient(90deg, #FF9800 0%, #FFB74D 100%);
+    }
+    .batch-ai-confidence.high { background: linear-gradient(90deg, #10B981 0%, #4ECDC4 100%); }
+    .batch-ai-confidence.mid { background: linear-gradient(90deg, #FF9800 0%, #FFB74D 100%); color: white; }
+    .batch-ai-confidence.low { background: #BDBDBD; }
+
+    .cat-chip {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 14px;
+      font-size: 12px;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      background: white;
+      color: #666;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .cat-chip:hover { border-color: var(--color-cyan); }
+    .cat-chip.selected {
+      background: var(--color-cyan);
+      color: white;
+      border-color: var(--color-cyan);
+    }
+    .venue-chip {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 14px;
+      font-size: 12px;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      background: white;
+      color: #666;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .venue-chip.selected {
+      background: #3B82F6;
+      color: white;
+      border-color: #3B82F6;
+    }
+
+    .batch-myidea {
+      font-size: 12px;
+      color: #888;
+      min-height: 18px;
+      padding: 4px 6px;
+      border-radius: 4px;
+      cursor: text;
+    }
+    .batch-myidea:hover { background: #fffbf0; }
+    .batch-myidea[contenteditable="true"] {
+      background: #fffbf0;
+      outline: 1px solid #FFD93D;
+    }
+
+    .status-pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid #ddd;
+      background: white;
+      color: #666;
+    }
+    .status-pill.selected.organized { background: #10B981; color: white; border-color: #10B981; }
+    .status-pill.selected.pending { background: #FFC107; color: white; border-color: #FFC107; }
+    .status-pill.selected.used { background: #6366F1; color: white; border-color: #6366F1; }
+
+    .batch-toolbar {
+      position: sticky;
+      bottom: 0;
+      background: white;
+      padding: 16px 0;
+      border-top: 1px solid #eee;
+      margin-top: 24px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="app"></div>
+  <script src="/js/api.js"></script>
+  <script>
+    let state = {
+      categories: [],
+      venueTypes: [],
+      inspirations: [],      // 当前批次的 4 条
+      page: 0,                 // 第几批
+      pageSize: 4,
+      saving: false,
+    };
+
+    document.getElementById('app').innerHTML = `
+      ${renderSidebar('list')}
+      <main class="main">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">🤖 批量确认</h1>
+            <div class="page-subtitle" id="header-info">加载中...</div>
+          </div>
+          <div class="flex gap-2">
+            <a href="/inspirations" class="btn btn-ghost">← 返回灵感库</a>
+          </div>
+        </div>
+
+        <div id="batch-content">
+          <div style="text-align: center; padding: 40px; color: #999;">加载中...</div>
+        </div>
+
+        <div class="batch-toolbar" id="batch-toolbar" style="display: none;">
+          <div class="text-soft" id="toolbar-info">显示第 1-4 条，共 0 条</div>
+          <div class="flex gap-2">
+            <button class="btn btn-ghost" id="prev-btn" onclick="prevPage()">← 上一批</button>
+            <button class="btn btn-ghost" id="next-btn" onclick="nextPage()">下一批 →</button>
+            <button class="btn btn-primary" id="save-btn" onclick="saveAll()">✓ 保存这一批</button>
+          </div>
+        </div>
+      </main>
+    `;
+
+    Promise.all([API.getCategories(), API.listInspirations({})])
+      .then(([catRes, listRes]) => {
+        if (catRes.success) {
+          state.categories = catRes.categories || [];
+          state.venueTypes = catRes.venueTypes || [];
+        }
+        if (listRes.success) {
+          // 只保留"待你确认"：status=pending + 有 aiSuggestion + confidence > 0
+          state.allPending = (listRes.inspirations || []).filter(i =>
+            i.status === 'pending' && i.aiSuggestion && (i.aiSuggestion.confidence || 0) > 0
+          );
+          state.totalCount = state.allPending.length;
+          state.pageSize = 4;
+          state.page = 0;
+          renderPage();
+        }
+      })
+      .catch(e => {
+        document.getElementById('batch-content').innerHTML = `<div class="find-empty">
+          <div class="find-empty-icon">😶</div>
+          <h3>加载失败：${escapeHtml(e.message || '网络错误')}</h3>
+        </div>`;
+      });
+
+    function renderPage() {
+      const list = state.allPending || [];
+      const total = list.length;
+      const start = state.page * state.pageSize;
+      const end = Math.min(start + state.pageSize, total);
+      const pageItems = list.slice(start, end);
+
+      state.inspirations = pageItems;
+
+      const headerInfo = document.getElementById('header-info');
+      headerInfo.textContent = total > 0
+        ? `共 ${total} 条待你确认 · 第 ${state.page + 1}/${Math.ceil(total / state.pageSize)} 批`
+        : '没有待确认的灵感了 🎉';
+
+      const toolbar = document.getElementById('batch-toolbar');
+      toolbar.style.display = total > 0 ? 'flex' : 'none';
+      if (total > 0) {
+        document.getElementById('toolbar-info').textContent =
+          `显示第 ${start + 1}-${end} 条，共 ${total} 条`;
+        document.getElementById('prev-btn').disabled = state.page === 0;
+        document.getElementById('next-btn').disabled = end >= total;
+      }
+
+      if (total === 0) {
+        document.getElementById('batch-content').innerHTML = `
+          <div class="find-empty">
+            <div class="find-empty-icon">✨</div>
+            <h3>没有待确认的灵感了</h3>
+            <p>所有 AI 已建议的灵感都处理完了。可以去灵感库看看，或跑下一批 AI 整理。</p>
+            <p style="margin-top: 16px;"><a class="btn btn-cyan" href="/inspirations" style="text-decoration: none; display: inline-block;">回到灵感库</a></p>
+          </div>
+        `;
+        return;
+      }
+
+      const content = document.getElementById('batch-content');
+      content.innerHTML = `<div class="batch-grid">${pageItems.map((insp, idx) => renderCard(insp, idx)).join('')}</div>`;
+    }
+
+    function renderCard(insp, idx) {
+      // 初始化：默认从 aiSuggestion 拿小类 + 展馆；状态默认 organized
+      if (!insp._local) {
+        insp._local = {
+          title: insp.title || '',
+          subCategories: insp.subCategories || (insp.aiSuggestion?.subCategories) || [],
+          subCategoryNames: insp.subCategoryNames || (insp.aiSuggestion?.subCategoryNames) || [],
+          venueType: insp.venueType || (insp.aiSuggestion?.venueType) || '',
+          venueTypeName: insp.venueTypeName || (insp.aiSuggestion?.venueTypeName) || '',
+          myIdea: buildMyIdea(insp),
+          status: 'organized',  // 第一次保存默认 organized
+        };
+      }
+      const l = insp._local;
+      const ai = insp.aiSuggestion;
+      const aiConf = ai?.confidence || 0;
+      const confClass = aiConf >= 70 ? 'high' : aiConf >= 40 ? 'mid' : 'low';
+
+      const cover = insp.coverImage
+        ? `<img src="${escapeHtml(insp.coverImage)}" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\'color:#999;font-size:13px;\\'>无图</div>'">`
+        : `<div style="color:#999;font-size:13px;">⏳ 抓取中</div>`;
+
+      const catChips = state.categories.map(c => {
+        const selected = l.subCategories.includes(c.id);
+        return `<span class="cat-chip ${selected ? 'selected' : ''}" data-id="${c.id}" onclick="toggleCat('${insp.id}', '${c.id}', this)">${escapeHtml(c.name)}</span>`;
+      }).join('');
+
+      const venueChips = state.venueTypes.map(v => {
+        const selected = l.venueType === v.id;
+        return `<span class="venue-chip ${selected ? 'selected' : ''}" onclick="toggleVenue('${insp.id}', '${v.id}', this)">${escapeHtml(v.name)}</span>`;
+      }).join('');
+
+      const statusPills = ['pending', 'organized', 'used'].map(s => {
+        return `<span class="status-pill ${l.status === s ? 'selected ' + s : ''}" onclick="toggleStatus('${insp.id}', '${s}', this)">${{pending:'待整理', organized:'已整理', used:'已用'}[s]}</span>`;
+      }).join('');
+
+      return `
+        <div class="batch-card" data-id="${insp.id}" onmouseenter="this.classList.add('hovering')" onmouseleave="this.classList.remove('hovering')">
+          <div class="batch-cover-wrap">${cover}</div>
+          <div>
+            <div class="batch-title" data-title="${escapeHtml(l.title)}" onclick="startEditTitle('${insp.id}', this, event)" title="点击修改标题">${escapeHtml(l.title || '无标题')}</div>
+            <div style="font-size: 11px; color: #999; margin-top: 4px;">
+              <span class="batch-ai-confidence ${confClass}">AI ${aiConf}%</span>
+              ${ai?.reasoning ? `<span style="margin-left: 8px;">💭 ${escapeHtml(ai.reasoning.slice(0, 60))}${ai.reasoning.length > 60 ? '...' : ''}</span>` : ''}
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 11px; color: #888; margin-bottom: 6px;">📋 形式小类（可多选）</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">${catChips}</div>
+          </div>
+          <div>
+            <div style="font-size: 11px; color: #888; margin-bottom: 6px;">🏛️ 展馆类型（单选）</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">${venueChips}</div>
+          </div>
+          <div>
+            <div style="font-size: 11px; color: #888; margin-bottom: 6px;">💡 My idea</div>
+            <div class="batch-myidea" data-myidea="${escapeHtml(l.myIdea)}" onclick="startEditMyIdea('${insp.id}', this, event)" title="点击编辑你的想法">${l.myIdea ? escapeHtml(l.myIdea) : '<span style="color: #ccc;">+ My idea</span>'}</div>
+          </div>
+          <div>
+            <div style="font-size: 11px; color: #888; margin-bottom: 6px;">📊 状态</div>
+            <div style="display: flex; gap: 6px;">${statusPills}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function buildMyIdea(insp) {
+      const tags = (insp.tags || []).join(' ');
+      const note = insp.userNote || '';
+      return [tags, note].filter(Boolean).join('\n').trim();
+    }
+
+    function toggleCat(inspId, catId, el) {
+      const insp = state.inspirations.find(i => i.id === inspId);
+      if (!insp) return;
+      const arr = insp._local.subCategories;
+      const idx = arr.indexOf(catId);
+      if (idx >= 0) {
+        arr.splice(idx, 1);
+        el.classList.remove('selected');
+      } else {
+        arr.push(catId);
+        el.classList.add('selected');
+      }
+    }
+
+    function toggleVenue(inspId, venueId, el) {
+      const insp = state.inspirations.find(i => i.id === inspId);
+      if (!insp) return;
+      // 单选：同组其他清掉
+      const card = el.closest('.batch-card');
+      card.querySelectorAll('.venue-chip').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+      insp._local.venueType = venueId;
+      insp._local.venueTypeName = state.venueTypes.find(v => v.id === venueId)?.name || venueId;
+    }
+
+    function toggleStatus(inspId, status, el) {
+      const insp = state.inspirations.find(i => i.id === inspId);
+      if (!insp) return;
+      const card = el.closest('.batch-card');
+      card.querySelectorAll('.status-pill').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+      insp._local.status = status;
+    }
+
+    // 标题就地编辑
+    async function startEditTitle(id, el, e) {
+      if (e) { e.stopPropagation(); e.preventDefault(); }
+      if (el.getAttribute('contenteditable') === 'true') return;
+      const insp = state.inspirations.find(i => i.id === id);
+      const original = insp._local.title;
+      el.setAttribute('contenteditable', 'true');
+      el.textContent = original;
+      el.style.background = '#fffbf0';
+      el.style.borderRadius = '4px';
+      el.style.padding = '2px 4px';
+      el.style.outline = '1px solid #FFD93D';
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      let finished = false;
+      const cleanup = () => {
+        el.removeAttribute('contenteditable');
+        el.style.background = '';
+        el.style.borderRadius = '';
+        el.style.padding = '';
+        el.style.outline = '';
+      };
+      el.addEventListener('blur', () => setTimeout(async () => {
+        if (finished) return;
+        finished = true;
+        const newTitle = (el.textContent || '').trim() || '无标题';
+        cleanup();
+        if (newTitle === original) {
+          el.textContent = original;
+          return;
+        }
+        insp._local.title = newTitle;
+        el.textContent = newTitle;
+      }, 100), { once: true });
+      el.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();
+        if (ev.key === 'Enter') { ev.preventDefault(); el.blur(); }
+        else if (ev.key === 'Escape') { finished = true; cleanup(); el.textContent = original; }
+      });
+    }
+
+    // My idea 就地编辑
+    async function startEditMyIdea(id, el, e) {
+      if (e) { e.stopPropagation(); e.preventDefault(); }
+      if (el.getAttribute('contenteditable') === 'true') return;
+      const insp = state.inspirations.find(i => i.id === id);
+      const original = insp._local.myIdea || '';
+      el.setAttribute('contenteditable', 'true');
+      el.textContent = original;
+      el.style.background = '#fffbf0';
+      el.style.outline = '1px solid #FFD93D';
+      el.style.padding = '4px 6px';
+      el.style.borderRadius = '4px';
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      let finished = false;
+      const cleanup = () => {
+        el.removeAttribute('contenteditable');
+        el.style.background = '';
+        el.style.outline = '';
+        el.style.padding = '';
+        el.style.borderRadius = '';
+      };
+      el.addEventListener('blur', () => setTimeout(() => {
+        if (finished) return;
+        finished = true;
+        const newText = (el.textContent || '').trim();
+        cleanup();
+        insp._local.myIdea = newText;
+        el.textContent = newText || '+ My idea';
+        if (!newText) el.innerHTML = '<span style="color: #ccc;">+ My idea</span>';
+      }, 100), { once: true });
+      el.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();
+        if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); el.blur(); }
+        else if (ev.key === 'Escape') { finished = true; cleanup(); el.textContent = original; }
+      });
+    }
+
+    function nextPage() {
+      const total = state.allPending.length;
+      if ((state.page + 1) * state.pageSize < total) {
+        state.page++;
+        renderPage();
+      }
+    }
+    function prevPage() {
+      if (state.page > 0) {
+        state.page--;
+        renderPage();
+      }
+    }
+
+    async function saveAll() {
+      if (state.saving) return;
+      state.saving = true;
+      const saveBtn = document.getElementById('save-btn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = '⏳ 保存中...';
+
+      const items = state.inspirations.map(insp => {
+        const l = insp._local;
+        const myIdeaText = l.myIdea || '';
+        const lines = myIdeaText.split('\n');
+        const tags = lines[0].trim().split(/\s+/).filter(Boolean);
+        const userNote = lines.slice(1).join('\n').trim();
+        return {
+          id: insp.id,
+          title: l.title,
+          subCategories: l.subCategories,
+          subCategoryNames: state.categories.filter(c => l.subCategories.includes(c.id)).map(c => c.name),
+          venueType: l.venueType,
+          venueTypeName: l.venueTypeName,
+          status: l.status,
+          tags,
+          userNote,
+          learnFromCorrection: true,  // 触发自动学习
+        };
+      });
+
+      try {
+        const res = await API.request('/api/batch-confirm', { method: 'POST', body: { items } });
+        if (res.success) {
+          showToast(`✓ 已保存 ${res.saved} 条`, 2000);
+          // 标记本地状态为已保存
+          state.inspirations.forEach(i => {
+            const card = document.querySelector(`.batch-card[data-id="${i.id}"]`);
+            if (card) card.classList.add('saved');
+          });
+          // 1.5 秒后翻到下一批
+          setTimeout(() => {
+            const total = state.allPending.length;
+            const newRemaining = total - (state.page + 1) * state.pageSize;
+            if (newRemaining > 0) {
+              state.page++;
+              renderPage();
+            } else {
+              // 全部处理完，跳回灵感库
+              showToast('🎉 全部处理完', 2500);
+              setTimeout(() => location.href = '/inspirations', 800);
+            }
+          }, 1500);
+        } else {
+          showToast('保存失败：' + (res.error || ''), 4000);
+        }
+      } catch (e) {
+        showToast('保存失败：' + (e.message || '网络错误'), 4000);
+      } finally {
+        state.saving = false;
+        saveBtn.disabled = false;
+        saveBtn.textContent = '✓ 保存这一批';
+      }
+    }
+  </script>
+</body>
+</html>
