@@ -210,12 +210,26 @@ export async function listInspirations(filter?: {
   }
   if (filter?.keyword) {
     const k = filter.keyword.toLowerCase();
-    list = list.filter(i =>
-      (i.title || '').toLowerCase().includes(k) ||
-      (i.description || '').toLowerCase().includes(k) ||
-      (i.userNote || '').toLowerCase().includes(k) ||
-      (i.tags || []).some(t => t.toLowerCase().includes(k))
-    );
+    list = list.filter(i => {
+      // 标题
+      if ((i.title || '').toLowerCase().includes(k)) return true;
+      // 描述
+      if ((i.description || '').toLowerCase().includes(k)) return true;
+      // My idea：标签
+      if ((i.tags || []).some(t => t.toLowerCase().includes(k))) return true;
+      // My idea：备注
+      if ((i.userNote || '').toLowerCase().includes(k)) return true;
+      // AI 视觉描述（"帮你找"用）
+      if ((i.visualDescription || '').toLowerCase().includes(k)) return true;
+      if ((i.aiSuggestion?.visualDescription || '').toLowerCase().includes(k)) return true;
+      // AI 视觉标签
+      const allTags = [
+        ...(i.visualTags || []),
+        ...(i.aiSuggestion?.visualTags || []),
+      ];
+      if (allTags.some(t => t.toLowerCase().includes(k))) return true;
+      return false;
+    });
   }
 
   return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));

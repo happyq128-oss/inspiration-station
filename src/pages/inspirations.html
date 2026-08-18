@@ -87,7 +87,7 @@
         </div>
 
         <div class="toolbar">
-          <input class="search-box" placeholder="🔍 搜索标题、描述、备注..." id="search-box" />
+          <input class="search-box" placeholder="🔍 搜索标题 / 描述 / My idea / 标签 / AI 视觉描述..." id="search-box" />
           <!-- 日期范围 popover -->
           <div style="position: relative;">
             <button class="filter-pill" id="date-btn" onclick="toggleDatePanel(event)" type="button">📅 <span id="date-summary">日期范围</span></button>
@@ -588,6 +588,7 @@
             if (typeof onSaved === 'function') onSaved(id, newText);
             const displayText = newText.length > 80 ? newText.slice(0, 80) + '...' : newText;
             el.innerHTML = newText ? '💡 ' + escapeHtml(displayText) : '<span style="color: #bbb;">+ My idea</span>';
+            showToast('✓ My idea 已保存', 1200);
           } else {
             showToast('保存失败：' + (res.error || ''), 3000);
             el.innerHTML = originalHtml;
@@ -601,7 +602,8 @@
       el.addEventListener('blur', () => setTimeout(save, 100), { once: true });
       el.addEventListener('keydown', (ev) => {
         ev.stopPropagation();
-        if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
+        if (ev.key === 'Enter' && !ev.shiftKey) {
+          // Enter 直接保存（Shift+Enter 换行）
           ev.preventDefault();
           el.blur();
         } else if (ev.key === 'Escape') {
