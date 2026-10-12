@@ -17,16 +17,27 @@ const API = {
     const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
     if (token) headers['X-Auth-Token'] = token;
 
+    // 30s client timeout：Netlify Free 冷启动 + 大数据同步函数偶尔 30s+ 没回复
+    // - 大部分正常 list 在 < 3s 返回
+    // - 真超过 30s 说明 server 卡了，重试也意义不大，直接显示兜底
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 30000);
     let res;
     try {
       res = await fetch(API_BASE + path, {
         ...options,
         headers,
         body: options.body ? JSON.stringify(options.body) : undefined,
+        signal: controller.signal,
       });
     } catch (e) {
+      clearTimeout(t);
+      if (e.name === 'AbortError') {
+        throw new Error('请求超时（30s），server 慢或断网，可刷新重试');
+      }
       throw new Error('网络错误：' + e.message);
     }
+    clearTimeout(t);
 
     // 401 自动弹 token 输入框
     if (res.status === 401 && !isRetry) {

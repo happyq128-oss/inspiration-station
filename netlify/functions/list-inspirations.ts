@@ -23,10 +23,21 @@ const _innerHandler: Handler = async (event, _ctx) => {
     endDate: params.endDate,
   });
 
+  // 精简响应：去掉大字段，避免 Netlify Function 6MB / 10s 超时
+  // - visualEmbedding: 1024 维 float 数组，每条约 10KB，"AI 找图" 用时单独查
+  // - aiSuggestion.visualEmbedding: 同理
+  const slim = list.map(({ visualEmbedding: _ve, aiSuggestion, ...rest }) => {
+    if (aiSuggestion) {
+      const { visualEmbedding: _aie, ...aiRest } = aiSuggestion;
+      return { ...rest, aiSuggestion: aiRest };
+    }
+    return rest;
+  });
+
   return jsonResponse({
     success: true,
     total: list.length,
-    inspirations: list,
+    inspirations: slim,
   });
 };
 
