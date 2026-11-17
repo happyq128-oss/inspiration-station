@@ -13,7 +13,7 @@ import { DataStore, DEFAULT_DATA, Inspiration } from './types';
 // ============ 配置 ============
 const DB_PATH = process.env.DB_PATH || path.join(process.env.DATA_DIR || '/data', 'inspiration.db');
 const IMAGE_BACKEND = process.env.IMAGE_BACKEND || 'local';
-const IMAGE_DIR = process.env.IMAGE_DIR || path.join(process.env.DATA_DIR || '/data', 'images');
+const IMAGE_DIR = process.env.IMAGE_DIR || path.join(process.env.DATA_DIR || '/data', 'inspiration/images');
 
 // ============ SQLite 初始化 ============
 let _db: any = null;

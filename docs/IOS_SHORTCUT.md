@@ -120,7 +120,7 @@ iOS 弹出对话框：
 ### 3.4 看通知 + 网页
 
 - 通知 ✨ 灵感已保存 弹出
-- 电脑浏览器 `https://lovely-lolly-5bf390.netlify.app/inspirations` 刷新
+- 电脑浏览器 `https://inspiration.hildaspace.top/inspirations` 刷新
 - 看到新记录：**带图、已分类、链接（如果有）**
 
 ---
@@ -139,11 +139,11 @@ iOS 弹出对话框：
 
 ## 🧪 故障排查
 
-- **通知出现但灵感站没记录** → 浏览器打开 `https://lovely-lolly-5bf390.netlify.app/.netlify/functions/health-check` 确认服务还活着；如果有错误，让我看
+- **通知出现但灵感站没记录** → 浏览器打开 `https://inspiration.hildaspace.top/api/health` 确认服务还活着；如果有错误，让我看
 - **弹窗没出来** → 检查「要求输入」动作配置（提示、输入类型）
 - **点 widget 报"没有照片"** → 等 3 秒再点；或者在 Shortcut 里加一个「等待 2 秒」动作在「获取最新照片」之前
 - **图片传不上去** → 看 Shortcut 跑的时候通知里有没有"响应内容"——会有错误信息
-- **Service 不通** → 如果 Netlify 部署挂了，找我重新 deploy
+- **Service 不通** → 如果 ECS 服务挂了，SSH 上 ECS 执行 `pm2 list` 看 `inspiration` 进程是否 online，不 online 就 `pm2 restart inspiration`
 
 ---
 

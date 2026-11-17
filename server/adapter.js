@@ -58,6 +58,11 @@ function sendResult(res, result) {
   if (result.body === null || result.body === undefined) {
     return res.end();
   }
+  // 如果是 base64 编码的二进制（图片/文件），需要先解码
+  if (result.isBase64Encoded) {
+    const buf = Buffer.from(result.body, 'base64');
+    return res.send(buf);
+  }
   res.send(result.body);
 }
 

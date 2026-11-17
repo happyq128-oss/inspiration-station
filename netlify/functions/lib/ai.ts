@@ -188,11 +188,12 @@ export async function aiClassify(input: AIInput): Promise<AIClassification> {
   const useQwen = !!qwenKey;
   const apiUrl = useQwen ? QWEN_API : DEEPSEEK_API;
   const apiKey = useQwen ? qwenKey : deepseekKey;
-  // 关键：只要有图（base64 或 URL），都必须用视觉模型 qwen-vl-max，
+  // 关键：只要有图（base64 或 URL），都必须用视觉模型（多模态 omni），
   // 否则 qwen-plus / deepseek-chat 是纯文本模型，看不到图
+  // 2026 千问AI平台推荐用 qwen3.8-omni-flash（支持图像/音频/文本）
   const hasImage = !!(input.imageBase64 || input.coverImage);
   const model = useQwen
-    ? (hasImage ? 'qwen-vl-max' : 'qwen-plus')
+    ? (hasImage ? 'qwen3.8-omni-flash' : 'qwen-plus')
     : 'deepseek-chat';
 
   const t0 = Date.now();

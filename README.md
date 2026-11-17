@@ -6,6 +6,24 @@
 
 ---
 
+## 🌐 当前部署信息
+
+| 项 | 值 |
+|---|---|
+| **线上地址** | https://inspiration.hildaspace.top （Let's Encrypt 证书 · 自动续期） |
+| 备用地址 | `http://47.117.74.222` （裸 IP） |
+| 服务器 | 阿里云 ECS `47.117.74.222`（1核2G · Alibaba Cloud Linux 3） |
+| 宝塔面板 | `https://47.117.74.222:8888/e2b39030`（安全入口必需 · 仅 HTTPS） |
+| 代码目录 | `/www/wwwroot/inspiration-station/` |
+| 数据目录 | `/data/inspiration.db` + `/data/inspiration/images/` |
+| 进程管理 | PM2 `inspiration`（Node 22 · 端口 3000 → nginx 反代到 80/443） |
+| iPhone 快捷方式 | `https://inspiration.hildaspace.top/api/add` |
+
+> ⚠️ **域名访问被 403（Server: Beaver）= ICP 备案未完成**。本项目域名已于 2026-11 通过阿里云 ICP 备案。
+> 宝塔面板的 HTTP 会直接 RST、必须走 HTTPS 且带安全入口路径 —— 这是宝塔新版默认机制，不是故障。
+
+---
+
 ## 🎯 这是什么？
 
 为展陈（展览陈列）策展人设计的**个人灵感索引工具**。
@@ -40,12 +58,15 @@
 
 ## 🚀 5 分钟启动
 
+> ⚠️ 本项目已于 2026-10 从 Netlify 迁移到 **阿里云 ECS**（Express + SQLite + 本地磁盘存图）。
+> 下方为**历史部署方式**，仅作参考；实际运维以本文档顶部「当前部署信息」和 `deploy.sh` 为准。
+
 ### 1. 准备账号
 - GitHub 账号
 - Netlify 账号（用 GitHub 登录）
 - DeepSeek 账号 + API Key
 
-### 2. 部署到 Netlify
+### 2. 部署到 Netlify（历史方案）
 
 ```bash
 # 1. 把代码 push 到你的 GitHub 仓库
@@ -82,29 +103,42 @@ git push -u origin main
 
 ```
 inspiration-station/
-├── netlify.toml                    # Netlify 配置（含 scheduled backup）
+├── server/                          # 【ECS】Express 入口
+│   ├── index.js                     #   路由注册 + .env 自动加载
+│   └── adapter.js                   #   Netlify handler → Express 中间件适配器
+├── scripts/
+│   ├── build-functions.js           #   esbuild 打包 netlify/functions → dist/
+│   ├── migrate-from-netlify.cjs     #   Netlify Blobs → SQLite 数据迁移
+│   ├── fix-local-paths.cjs          #   修复本地图片路径字符不匹配
+│   └── diag-local-paths.cjs         #   路径问题诊断
+├── netlify.toml                    # Netlify 配置（历史）
 ├── package.json                    # 依赖
 ├── tsconfig.json                   # TypeScript 配置
 ├── netlify/
-│   └── functions/                  # 后端 API
+│   └── functions/                  # 后端 API（Lambda 风格，由 adapter 包装）
 │       ├── lib/
-│       │   ├── types.ts            # 数据模型
-│       │   ├── storage.ts          # Netlify Blobs 数据层
-│       │   ├── scraper.ts          # 页面抓取
-│       │   ├── ai.ts               # DeepSeek 集成
-│       │   └── utils.ts            # 工具函数
-│       ├── health-check.ts
-│       ├── add-inspiration.ts      # 快捷指令调用入口
+│       │   ├── types.ts            #   数据模型
+│       │   ├── storage.ts          #   数据层路由（按 DATA_BACKEND 分流）
+│       │   ├── storage-sqlite.ts   #   ECS：SQLite + 本地磁盘（当前生产）
+│       │   ├── storage-blobs.ts    #   Netlify Blobs（历史）
+│       │   ├── scraper.ts          #   页面抓取
+│       │   ├── ai.ts               #   千问 Qwen 集成
+│       │   ├── embedding.ts        #   向量检索（AI 找图）
+│       │   └── utils.ts            #   工具函数
+│       ├── add-inspiration.ts      #   快捷指令调用入口
 │       ├── list-inspirations.ts
 │       ├── update-inspiration.ts
 │       ├── delete-inspiration.ts
-│       ├── ai-classify.ts          # 手动重分类
-│       ├── scrape-page.ts          # 手动重抓取
+│       ├── ai-classify.ts          #   手动重分类
+│       ├── batch-classify.ts       #   批量分类
+│       ├── batch-confirm.ts        #   批量确认（4 条/页）
+│       ├── scrape-page.ts          #   手动重抓取
 │       ├── get-stats.ts
 │       ├── manage-categories.ts
 │       ├── export-excel.ts
 │       ├── backup-data.ts
-│       └── scheduled-backup.ts     # 定时备份
+│       ├── feedback.ts             #   用户纠正（AI 自学习）
+│       └── reset-bad-status.ts     #   重置异常分类
 ├── src/                            # 网页端（静态）
 │   ├── index.html                  # 首页（数据概览）
 │   ├── pages/
@@ -116,9 +150,9 @@ inspiration-station/
 │   └── js/
 │       └── api.js                  # API 客户端
 └── docs/
-    ├── DEPLOY.md                   # Netlify 部署教程
-    ├── IOS_SHORTCUT.md             # iOS 相簿自动化教程
-    └── DEEPSEEK_API.md             # DeepSeek API 教程
+    ├── DEPLOY.md                   # 部署教程
+    ├── IOS_SHORTCUT.md             # iOS 快捷指令教程
+    └── DEEPSEEK_API.md             # API Key 教程
 ```
 
 ---
@@ -169,20 +203,20 @@ inspiration-station/
 
 | 项目 | 成本 |
 |---|---|
-| Netlify 托管 | 免费（个人额度） |
-| Netlify Blobs | 免费（1GB 存储） |
-| Netlify Functions | 免费（125K 请求/月） |
-| DeepSeek API | ~0.0006 元/条 |
-| **月总成本** | **几毛钱** |
+| 阿里云 ECS（1核2G / 3Mbps） | ~8 元/月（99 元/年促销价） |
+| 阿里云 OSS（图片存储，可选） | 按量，几分钱 |
+| 域名 hildaspace.top | 9 元/年 |
+| 千问 API（qwen3.8-omni-flash） | ~0.001 元/条 |
+| **月总成本** | **约 10 元** |
 
 ---
 
 ## 🔐 隐私
 
-- 所有数据存在你的 Netlify Blobs（你自己的账号下）
-- AI 只把标题+描述发给 DeepSeek，不发 URL 也不发截图
+- 所有数据存在你自己的阿里云 ECS（SQLite + 本地磁盘，账号在你名下）
+- AI 只把标题+描述发给千问，不发 URL 也不发截图（图片仅本地分析）
 - 不收集任何用户数据
-- 随时可以删除整个项目，删了 Netlify 项目就没了
+- 随时可以删除整个项目，删了 ECS 实例和 `/data/` 就没了
 
 ---
 
@@ -195,13 +229,13 @@ MIT — 你可以自由使用、修改、分发。
 ## 🙏 致谢
 
 - 配色灵感来自 [CC的艺术手帐](https://xiaohongshu.com) 的工作台设计
-- AI 能力来自 [DeepSeek](https://deepseek.com)
-- 部署平台 [Netlify](https://netlify.com)
+- AI 能力来自 [千问 Qwen](https://qianwenai.com)
+- 部署平台 [阿里云 ECS](https://ecs.console.aliyun.com) + 宝塔面板
 
 ---
 
 ## 🎉 现在就开始
 
-👉 [Netlify 部署教程](./docs/DEPLOY.md)
-👉 [iOS 相簿自动化配置](./docs/IOS_SHORTCUT.md)
-👉 [DeepSeek API 申请](./docs/DEEPSEEK_API.md)
+👉 [iOS 快捷指令配置](./docs/IOS_SHORTCUT.md)
+👉 [部署教程](./docs/DEPLOY.md)
+👉 [API Key 申请](./docs/DEEPSEEK_API.md)

@@ -58,8 +58,9 @@ const _innerHandler: Handler = async (event, context) => {
         .filter(id => {
           const i = inspirations[id];
           if (i.status !== 'pending') return false;
-          // 跳过已 AI 跑过（有 aiSuggestion 且 confidence>0）的：避免重复烧 Qwen token
-          if (i.aiSuggestion && (i.aiSuggestion.confidence || 0) > 0) return false;
+          // 跳过任何已 AI 跑过（有 aiSuggestion）的：避免 0% 兜底结果被无限重试
+          // 想重跑就调 /api/reset-bad-status（清掉 0% 的 aiSuggestion）
+          if (i.aiSuggestion) return false;
           return true;
         })
         .sort((a, b) => (inspirations[a].createdAt || '').localeCompare(inspirations[b].createdAt || ''));

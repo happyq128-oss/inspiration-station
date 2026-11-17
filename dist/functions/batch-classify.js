@@ -633,7 +633,7 @@ var init_storage_sqlite = __esm({
     ({ DatabaseSync } = require("node:sqlite"));
     DB_PATH = process.env.DB_PATH || path.join(process.env.DATA_DIR || "/data", "inspiration.db");
     IMAGE_BACKEND = process.env.IMAGE_BACKEND || "local";
-    IMAGE_DIR = process.env.IMAGE_DIR || path.join(process.env.DATA_DIR || "/data", "images");
+    IMAGE_DIR = process.env.IMAGE_DIR || path.join(process.env.DATA_DIR || "/data", "inspiration/images");
     _db = null;
     _ossClient = null;
     SETTINGS_KEY = "main";
@@ -894,7 +894,7 @@ async function aiClassify(input) {
   const apiUrl = useQwen ? QWEN_API : DEEPSEEK_API;
   const apiKey = useQwen ? qwenKey : deepseekKey;
   const hasImage = !!(input.imageBase64 || input.coverImage);
-  const model = useQwen ? hasImage ? "qwen-vl-max" : "qwen-plus" : "deepseek-chat";
+  const model = useQwen ? hasImage ? "qwen3.8-omni-flash" : "qwen-plus" : "deepseek-chat";
   const t0 = Date.now();
   const systemPrompt = buildSystemPrompt(categories, venueTypes);
   console.log(`[ai] prompt built: ${Date.now() - t0}ms, model=${model}`);
@@ -1143,7 +1143,7 @@ var _innerHandler = async (event, context) => {
       toProcess = Object.keys(inspirations).filter((id) => {
         const i = inspirations[id];
         if (i.status !== "pending") return false;
-        if (i.aiSuggestion && (i.aiSuggestion.confidence || 0) > 0) return false;
+        if (i.aiSuggestion) return false;
         return true;
       }).sort((a, b) => (inspirations[a].createdAt || "").localeCompare(inspirations[b].createdAt || ""));
     } else if (ids) {

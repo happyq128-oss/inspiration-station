@@ -4,7 +4,7 @@
       "WFWorkflowActionIdentifier": "is.workflow.actions.getvariable",
       "WFWorkflowActionParameters": {
         "WFVariableName": "API_URL",
-        "WFTextActionText": "https://你的域名.netlify.app/api/add"
+        "WFTextActionText": "https://inspiration.hildaspace.top/api/add"
       }
     },
     {
@@ -29,7 +29,7 @@
     {
       "WFWorkflowActionIdentifier": "is.workflow.actions.url",
       "WFWorkflowActionParameters": {
-        "WFURLActionURL": "https://你的域名.netlify.app"
+        "WFURLActionURL": "https://inspiration.hildaspace.top"
       }
     }
   ]

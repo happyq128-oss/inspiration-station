@@ -3,6 +3,28 @@
 // 把所有 Netlify Functions 包成 Express 路由
 // 数据存储后端由 DATA_BACKEND 环境变量决定（sqlite | blobs）
 
+// === .env 自动加载（PM2 启动时不需要手动传 env vars）===
+const _fs = require('fs');
+const _path = require('path');
+try {
+  const _envPath = _path.join(__dirname, '..', '.env');
+  const _envContent = _fs.readFileSync(_envPath, 'utf8');
+  _envContent.split('\n').forEach(line => {
+    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (m) {
+      let v = m[2];
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+        v = v.slice(1, -1);
+      }
+      if (process.env[m[1]] === undefined) process.env[m[1]] = v;
+    }
+  });
+  console.log('[server] ✓ Loaded .env from', _envPath);
+} catch (e) {
+  console.warn('[server] .env load failed:', e.message);
+}
+// === .env 加载结束 ===
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -13,7 +35,7 @@ const DIST = path.join(ROOT, 'dist/functions');
 
 // 加载编译后的 handlers
 const handlers = {};
-const handlerFiles = fs.readdirSync(DIST).filter(f => f.endsWith('.js'));
+const handlerFiles = fs.readdirSync(DIST).filter(f => f.endsWith('.js') && !f.startsWith('._'));
 for (const file of handlerFiles) {
   const name = file.replace(/\.js$/, '');
   try {
@@ -53,7 +75,7 @@ app.get('/api/health', (req, res) => {
     ts: Date.now(),
     uptime: process.uptime(),
     handlers: Object.keys(handlers).length,
-    backend: process.env.DATA_BACKEND || 'blobs',
+    backend: process.env.DATA_BACKEND || 'sqlite',
   });
 });
 

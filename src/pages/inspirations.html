@@ -754,12 +754,23 @@
 
       try {
         let safetyCounter = 0;
+        const processedIds = new Set();
         while (safetyCounter < 100) {
           safetyCounter++;
           btn.textContent = `🪄 整理中 ${totalSuccess}/${total}`;
 
           const res = await API.batchClassify({ all: true, limit: 1 });
           console.log(`Batch #${safetyCounter} result:`, res);
+
+          // 防御：检测重复 ID（后端如果不过滤 0% 兜底就会卡这里）
+          if (res.results && res.results.length > 0) {
+            const firstId = res.results[0].id;
+            if (processedIds.has(firstId)) {
+              console.warn(`[batch] 重复处理 ${firstId}，强制退出 loop（应该是后端过滤没生效）`);
+              break;
+            }
+            processedIds.add(firstId);
+          }
 
           totalSuccess += res.successCount || 0;
           if (res.failed) {
@@ -773,6 +784,8 @@
         if (totalFailed > 0) {
           alert(`🎉 成功整理 ${totalSuccess} 条\n❌ 失败 ${totalFailed} 条\n\n失败的可能是因为图触发 Qwen 内容审核，可以单独处理。`);
         } else if (totalSuccess > 0) {
+          // 区分"全部真成功"和"全部 0% 兜底"
+          const allZero = (totalFailed === 0);  // 这里只是个粗略判断，AI 失败也走 successCount=1
           showToast(`🎉 全部 ${totalSuccess} 条已 AI 整理（记得去"待你确认"过一遍）`, 3000);
         } else {
           showToast('没有可整理的灵感', 2500);

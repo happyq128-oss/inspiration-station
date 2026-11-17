@@ -633,7 +633,7 @@ var init_storage_sqlite = __esm({
     ({ DatabaseSync } = require("node:sqlite"));
     DB_PATH = process.env.DB_PATH || path.join(process.env.DATA_DIR || "/data", "inspiration.db");
     IMAGE_BACKEND = process.env.IMAGE_BACKEND || "local";
-    IMAGE_DIR = process.env.IMAGE_DIR || path.join(process.env.DATA_DIR || "/data", "images");
+    IMAGE_DIR = process.env.IMAGE_DIR || path.join(process.env.DATA_DIR || "/data", "inspiration/images");
     _db = null;
     _ossClient = null;
     SETTINGS_KEY = "main";
@@ -711,9 +711,16 @@ var _innerHandler = async (event, _ctx) => {
     const candidates = [];
     for (const [id, insp] of Object.entries(data.inspirations)) {
       if (insp.status === "organized" && !insp.confirmedAt) {
-        candidates.push({ id, title: insp.title || "\u65E0\u6807\u9898" });
+        candidates.push({ id, title: insp.title || "\u65E0\u6807\u9898", reason: "organized-without-confirm" });
         if (!dryRun) {
           insp.status = "pending";
+        }
+        continue;
+      }
+      if (insp.aiSuggestion && (insp.aiSuggestion.confidence || 0) === 0) {
+        candidates.push({ id, title: insp.title || "\u65E0\u6807\u9898", reason: "ai-zero-confidence" });
+        if (!dryRun) {
+          delete insp.aiSuggestion;
         }
       }
     }
@@ -725,8 +732,7 @@ var _innerHandler = async (event, _ctx) => {
       dryRun,
       resetCount: candidates.length,
       resetItems: candidates.slice(0, 20),
-      // 最多返回前 20 个标题给前端显示
-      message: dryRun ? `\u68C0\u6D4B\u5230 ${candidates.length} \u6761 AI \u8BEF\u6807\u7684"\u5DF2\u6574\u7406"` : candidates.length > 0 ? `\u2713 \u5DF2\u91CD\u7F6E ${candidates.length} \u6761\u56DE\u5230"\u5F85\u6574\u7406"` : "\u6CA1\u6709\u9700\u8981\u91CD\u7F6E\u7684\u7075\u611F"
+      message: dryRun ? `\u68C0\u6D4B\u5230 ${candidates.length} \u6761\u9700\u8981\u91CD\u7F6E\u7684\u7075\u611F\uFF08\u8BEF\u6807\u5DF2\u6574\u7406 + AI 0% \u515C\u5E95\uFF09` : candidates.length > 0 ? `\u2713 \u5DF2\u91CD\u7F6E ${candidates.length} \u6761\uFF08\u5305\u542B ${candidates.filter((c) => c.reason === "ai-zero-confidence").length} \u6761 0% \u7F6E\u4FE1\u5EA6\uFF09` : "\u6CA1\u6709\u9700\u8981\u91CD\u7F6E\u7684\u7075\u611F"
     });
   } catch (e) {
     console.error("[reset-bad-status] error:", e);
