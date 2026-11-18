@@ -41,6 +41,12 @@ const _innerHandler: Handler = async (event, context) => {
   const limit = typeof body.limit === 'number' && body.limit > 0 && body.limit <= 3
     ? Math.floor(body.limit)
     : 1;
+  // 前端传入「本次要跳过的 id」——某条失败/超时后把它排掉，
+  // 否则后端会反复返回同一条，前端只能 break，整批被一条拖死
+  const excludeIds: string[] = Array.isArray(body.excludeIds)
+    ? body.excludeIds.filter((x: any) => typeof x === 'string')
+    : [];
+  const excludeSet = new Set(excludeIds);
 
   if (!all && !ids) {
     return errorResponse('Either all=true or ids[] is required', 400);
@@ -58,6 +64,7 @@ const _innerHandler: Handler = async (event, context) => {
         .filter(id => {
           const i = inspirations[id];
           if (i.status !== 'pending') return false;
+          if (excludeSet.has(id)) return false;
           // 跳过任何已 AI 跑过（有 aiSuggestion）的：避免 0% 兜底结果被无限重试
           // 想重跑就调 /api/reset-bad-status（清掉 0% 的 aiSuggestion）
           if (i.aiSuggestion) return false;
@@ -67,7 +74,7 @@ const _innerHandler: Handler = async (event, context) => {
     } else if (ids) {
       toProcess = singleForce ? ids : ids.filter(id => {
         const insp = inspirations[id];
-        return insp && insp.status === 'pending';
+        return insp && insp.status === 'pending' && !excludeSet.has(id);
       });
     }
 

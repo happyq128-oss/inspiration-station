@@ -380,14 +380,14 @@
       const total = state.inspirations.length;
       document.getElementById('result-count').textContent = total > 0 ? `共 ${total} 条灵感` : '还没有匹配的灵感';
 
-      // 区分两类 pending：
-      //   - 待 AI 整理：status=pending 且还没 AI 跑过（!aiSuggestion）
-      //   - 待你确认：status=pending 且 AI 已跑过（aiSuggestion.confidence>0）
+      // 区分两类 pending（口径与后端 batch-classify.ts 保持一致）：
+      //   - 待 AI 整理：status=pending 且 AI 从没跑过（!aiSuggestion）→ 后端会处理
+      //   - 待你确认：status=pending 且 AI 跑过（有 aiSuggestion，含 0% 失败的）→ 你来点确认
       const pendingAI = state.inspirations.filter(i =>
-        i.status === 'pending' && (!i.aiSuggestion || (i.aiSuggestion.confidence || 0) === 0)
+        i.status === 'pending' && !i.aiSuggestion
       );
       const pendingReview = state.inspirations.filter(i =>
-        i.status === 'pending' && i.aiSuggestion && (i.aiSuggestion.confidence || 0) > 0
+        i.status === 'pending' && !!i.aiSuggestion
       );
 
       const batchToolbar = document.getElementById('batch-toolbar');
@@ -733,15 +733,16 @@
      * 一键批量 AI 整理所有"待 AI 整理"的灵感（已 AI 跑过的跳过）
      */
     async function batchClassifyAll() {
-      const pendingAI = state.inspirations.filter(i =>
-        i.status === 'pending' && (!i.aiSuggestion || (i.aiSuggestion.confidence || 0) === 0)
-      );
+      // 口径必须与后端 batch-classify.ts 一致：后端只处理「没有 aiSuggestion」的。
+      // 旧口径把 confidence===0 的也算进来 → 前端说「待整理 N 条」，后端却跳过它们，
+      // 用户永远看到「待整理」却怎么点都处理不完。
+      const pendingAI = state.inspirations.filter(i => i.status === 'pending' && !i.aiSuggestion);
       if (pendingAI.length === 0) {
         showToast('没有待 AI 整理的灵感（已 AI 跑过的请到"待你确认"工具栏处理）');
         return;
       }
       const total = pendingAI.length;
-      const perItem = 4; // 每条约 4 秒
+      const perItem = 8; // 实测每条 5-15 秒（含多模态读图 + embedding）
       if (!confirm(`将分批调用 AI 整理 ${total} 条灵感（每条约 ${perItem} 秒，共约 ${total * perItem} 秒）。\n\n⚠️ 已 AI 跑过但没确认的不会被重复跑。`)) return;
 
       const btn = event.target;
@@ -751,42 +752,63 @@
       let totalSuccess = 0;
       let totalFailed = 0;
       const allFailed = [];
+      // 本次要跳过的 id：某条超时/失败后把它排掉，
+      // 否则后端会一直返回同一条 → 前端重复检测 → 整批被一条拖死
+      const excludeIds = [];
+      const processedIds = new Set();
 
       try {
         let safetyCounter = 0;
-        const processedIds = new Set();
-        while (safetyCounter < 100) {
+        let consecutiveErrors = 0;
+        while (safetyCounter < 200) {
           safetyCounter++;
           btn.textContent = `🪄 整理中 ${totalSuccess}/${total}`;
 
-          const res = await API.batchClassify({ all: true, limit: 1 });
-          console.log(`Batch #${safetyCounter} result:`, res);
+          let res;
+          try {
+            res = await API.batchClassify({ all: true, limit: 1, excludeIds });
+          } catch (e) {
+            // 单次请求失败（超时 / 网络）→ 绝不退出整批，连续 3 次才停
+            consecutiveErrors++;
+            console.error('[batch] 单次请求失败', e);
+            totalFailed++;
+            if (consecutiveErrors >= 3) {
+              alert(`批量整理连续失败 3 次，已停止。\n\n最后错误：${e.message}\n\n已整理 ${totalSuccess} 条。可以稍后再点一次，剩下的会接着跑。`);
+              break;
+            }
+            await new Promise(r => setTimeout(r, 3000));
+            continue;
+          }
+          consecutiveErrors = 0;
 
-          // 防御：检测重复 ID（后端如果不过滤 0% 兜底就会卡这里）
+          // 重复 ID → 排掉它，继续处理其他条目（旧代码直接 break，整批静默死掉）
           if (res.results && res.results.length > 0) {
             const firstId = res.results[0].id;
-            if (processedIds.has(firstId)) {
-              console.warn(`[batch] 重复处理 ${firstId}，强制退出 loop（应该是后端过滤没生效）`);
-              break;
+            if (processedIds.has(firstId) || excludeIds.includes(firstId)) {
+              console.warn(`[batch] ${firstId} 被重复返回，排掉后继续处理其他条目`);
+              if (!excludeIds.includes(firstId)) excludeIds.push(firstId);
+              if (excludeIds.length >= total) break;
+              continue;
             }
             processedIds.add(firstId);
           }
 
           totalSuccess += res.successCount || 0;
-          if (res.failed) {
+          if (res.failed && res.failed.length) {
             totalFailed += res.failed.length;
             allFailed.push(...res.failed);
+            res.failed.forEach(f => {
+              if (f.id && !excludeIds.includes(f.id)) excludeIds.push(f.id);
+            });
           }
 
           if (!res.hasMore) break;
         }
 
         if (totalFailed > 0) {
-          alert(`🎉 成功整理 ${totalSuccess} 条\n❌ 失败 ${totalFailed} 条\n\n失败的可能是因为图触发 Qwen 内容审核，可以单独处理。`);
+          alert(`🎉 成功整理 ${totalSuccess} 条\n❌ 失败 ${totalFailed} 条\n\n失败的可能是图触发内容审核，或单条超时。已成功的不会白跑，剩下的下次点会接着处理。`);
         } else if (totalSuccess > 0) {
-          // 区分"全部真成功"和"全部 0% 兜底"
-          const allZero = (totalFailed === 0);  // 这里只是个粗略判断，AI 失败也走 successCount=1
-          showToast(`🎉 全部 ${totalSuccess} 条已 AI 整理（记得去"待你确认"过一遍）`, 3000);
+          showToast(`🎉 ${totalSuccess} 条已 AI 整理 → 去"待你确认"过一遍就变已整理`, 4000);
         } else {
           showToast('没有可整理的灵感', 2500);
         }

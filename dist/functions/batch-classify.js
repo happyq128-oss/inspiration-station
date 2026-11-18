@@ -1131,6 +1131,8 @@ var _innerHandler = async (event, context) => {
   const all = !!body.all;
   const ids = Array.isArray(body.ids) ? body.ids : void 0;
   const limit = typeof body.limit === "number" && body.limit > 0 && body.limit <= 3 ? Math.floor(body.limit) : 1;
+  const excludeIds = Array.isArray(body.excludeIds) ? body.excludeIds.filter((x) => typeof x === "string") : [];
+  const excludeSet = new Set(excludeIds);
   if (!all && !ids) {
     return errorResponse("Either all=true or ids[] is required", 400);
   }
@@ -1143,13 +1145,14 @@ var _innerHandler = async (event, context) => {
       toProcess = Object.keys(inspirations).filter((id) => {
         const i = inspirations[id];
         if (i.status !== "pending") return false;
+        if (excludeSet.has(id)) return false;
         if (i.aiSuggestion) return false;
         return true;
       }).sort((a, b) => (inspirations[a].createdAt || "").localeCompare(inspirations[b].createdAt || ""));
     } else if (ids) {
       toProcess = singleForce ? ids : ids.filter((id) => {
         const insp = inspirations[id];
-        return insp && insp.status === "pending";
+        return insp && insp.status === "pending" && !excludeSet.has(id);
       });
     }
     if (toProcess.length === 0) {

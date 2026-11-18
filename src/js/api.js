@@ -17,15 +17,17 @@ const API = {
     const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
     if (token) headers['X-Auth-Token'] = token;
 
-    // 30s client timeout：Netlify Free 冷启动 + 大数据同步函数偶尔 30s+ 没回复
-    // - 大部分正常 list 在 < 3s 返回
-    // - 真超过 30s 说明 server 卡了，重试也意义不大，直接显示兜底
+    // 超时：默认 120s
+    // 旧版 30s 是「批量 AI 整理罢工」的元凶——多模态读图 + embedding
+    // 单条真实耗时可达 60~90s，30s 一到前端就 abort，整个批量循环抛异常退出。
+    // 失败的那条还会在下一轮被后端再次返回，触发重复检测 → 静默中断。
+    const { timeoutMs, ...fetchOptions } = options;
     const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 30000);
+    const t = setTimeout(() => controller.abort(), timeoutMs || 120000);
     let res;
     try {
       res = await fetch(API_BASE + path, {
-        ...options,
+        ...fetchOptions,
         headers,
         body: options.body ? JSON.stringify(options.body) : undefined,
         signal: controller.signal,
@@ -33,7 +35,7 @@ const API = {
     } catch (e) {
       clearTimeout(t);
       if (e.name === 'AbortError') {
-        throw new Error('请求超时（30s），server 慢或断网，可刷新重试');
+        throw new Error(`请求超时（${Math.round((timeoutMs || 120000) / 1000)}s），server 慢或断网，可刷新重试`);
       }
       throw new Error('网络错误：' + e.message);
     }
@@ -82,9 +84,10 @@ const API = {
   rescrape(id) { return this.request('/api/scrape', { method: 'POST', body: { id } }); },
 
   // 批量 AI 整理（用户主动触发）
+  // 注意：旧实现只透传 {all} 或 {ids}，把 limit / excludeIds 全丢了
   batchClassify(opts = {}) {
-    const body = opts.ids ? { ids: opts.ids } : { all: true };
-    return this.request('/api/batch-classify', { method: 'POST', body });
+    const body = { all: true, ...opts };
+    return this.request('/api/batch-classify', { method: 'POST', body, timeoutMs: 180000 });
   },
 
   // 统计
